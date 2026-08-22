@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "main.js",
   "author": "Memphis-Cat",
@@ -17,13 +17,14 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
-    "electron": "^37.2.6",
+    "electron": "43.4.0",
     "electron-builder": "^26.0.12"
   },
   "build": {
     "appId": "com.memphiscat.easypeasyhammer",
     "productName": "EasyPeasyHammer",
     "asar": true,
+    "electronDist": ".runtime/electron-dist",
     "files": [
       "main.js",
       "preload.js",
