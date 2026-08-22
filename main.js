@@ -2,6 +2,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 let mainWindow = null;
 let lastRendererSnapshot = null;
@@ -14,6 +15,10 @@ function getDocumentsRoot() {
 
 function getAutosavesRoot() {
   return path.join(getDocumentsRoot(), 'Autosaves');
+}
+
+function getBackupsRoot() {
+  return path.join(getDocumentsRoot(), 'Backups');
 }
 
 function getSessionFile() {
@@ -44,19 +49,28 @@ function sanitizeName(value) {
     .slice(0, 80) || 'Untitled';
 }
 
+function projectKey(project) {
+  const source = String(project?.vmapPath || project?.name || 'Untitled').toLowerCase();
+  return `${sanitizeName(project?.name || 'Untitled')}_${crypto.createHash('sha1').update(source).digest('hex').slice(0, 10)}`;
+}
+
 function getAutosaveFolderForProject(project) {
-  const fileName = sanitizeName(project?.name || path.basename(project?.vmapPath || 'Untitled', '.vmap'));
-  return path.join(getAutosavesRoot(), fileName);
+  return path.join(getAutosavesRoot(), projectKey(project));
+}
+
+function getBackupFolderForVmap(vmapPath) {
+  const name = sanitizeName(path.basename(vmapPath || 'Untitled.vmap', path.extname(vmapPath || '')));
+  const hash = crypto.createHash('sha1').update(String(vmapPath || '')).digest('hex').slice(0, 10);
+  return path.join(getBackupsRoot(), `${name}_${hash}`);
 }
 
 function saveSession(project, uiState = null) {
   if (!project) return;
-
   const autosaveFolder = getAutosaveFolderForProject(project);
   ensureFolder(autosaveFolder);
 
   const payload = {
-    version: 1,
+    version: 2,
     savedAt: new Date().toISOString(),
     project,
     uiState: uiState || null
@@ -64,29 +78,45 @@ function saveSession(project, uiState = null) {
 
   safeWriteJson(path.join(autosaveFolder, 'session.json'), payload);
   safeWriteJson(getSessionFile(), {
-    version: 1,
+    version: 2,
     savedAt: payload.savedAt,
     project,
     autosaveFile: path.join(autosaveFolder, 'session.json')
   });
 }
 
+function getProjectAutosave(project) {
+  if (!project) return null;
+  return safeReadJson(path.join(getAutosaveFolderForProject(project), 'session.json'));
+}
+
 function getStartupState() {
   const pointer = safeReadJson(getSessionFile());
-  if (!pointer?.project) {
-    return { hasLastSession: false, lastSession: null };
-  }
+  if (!pointer?.project) return { hasLastSession: false, lastSession: null };
 
-  const autosave = pointer.autosaveFile ? safeReadJson(pointer.autosaveFile) : null;
+  const autosave = pointer.autosaveFile ? safeReadJson(pointer.autosaveFile) : getProjectAutosave(pointer.project);
   const project = autosave?.project || pointer.project;
+  if (!project) return { hasLastSession: false, lastSession: null };
 
   return {
-    hasLastSession: Boolean(project),
-    lastSession: project ? {
+    hasLastSession: true,
+    lastSession: {
       project,
       uiState: autosave?.uiState || null,
       savedAt: autosave?.savedAt || pointer.savedAt || null
-    } : null
+    }
+  };
+}
+
+function projectFromPath(vmapPath, type = 'existing-vmap') {
+  return {
+    id: `vmap:${vmapPath}`,
+    type,
+    name: path.basename(vmapPath, path.extname(vmapPath)),
+    vmapPath,
+    projectFolder: path.dirname(vmapPath),
+    createdAt: type === 'new-project' ? new Date().toISOString() : null,
+    openedAt: new Date().toISOString()
   };
 }
 
@@ -101,20 +131,9 @@ async function openExistingVmap() {
   });
 
   if (result.canceled || !result.filePaths[0]) return null;
-
-  const vmapPath = result.filePaths[0];
-  const project = {
-    id: `vmap:${vmapPath}`,
-    type: 'existing-vmap',
-    name: path.basename(vmapPath, path.extname(vmapPath)),
-    vmapPath,
-    projectFolder: path.dirname(vmapPath),
-    createdAt: null,
-    openedAt: new Date().toISOString()
-  };
-
+  const project = projectFromPath(result.filePaths[0]);
   saveSession(project, null);
-  return project;
+  return { project, uiState: null };
 }
 
 async function createNewProject(event, projectName) {
@@ -128,24 +147,52 @@ async function createNewProject(event, projectName) {
 
   const projectFolder = path.join(result.filePaths[0], cleanName);
   ensureFolder(projectFolder);
-
   const vmapPath = path.join(projectFolder, `${cleanName}.vmap`);
-  if (!fs.existsSync(vmapPath)) {
-    fs.writeFileSync(vmapPath, '// byanca\n', 'utf8');
-  }
-
-  const project = {
-    id: `project:${vmapPath}`,
-    type: 'new-project',
-    name: cleanName,
-    vmapPath,
-    projectFolder,
-    createdAt: new Date().toISOString(),
-    openedAt: new Date().toISOString()
-  };
-
+  const project = projectFromPath(vmapPath, 'new-project');
   saveSession(project, null);
-  return project;
+  return { project, uiState: null };
+}
+
+function loadVmap(vmapPath) {
+  try {
+    if (!vmapPath || !fs.existsSync(vmapPath)) return { ok: false, error: 'VMAP file does not exist.' };
+    const stat = fs.statSync(vmapPath);
+    return {
+      ok: true,
+      text: fs.readFileSync(vmapPath, 'utf8'),
+      size: stat.size,
+      modifiedAt: stat.mtime.toISOString()
+    };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+function createBackup(vmapPath) {
+  if (!fs.existsSync(vmapPath)) return null;
+  const folder = getBackupFolderForVmap(vmapPath);
+  ensureFolder(folder);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(folder, `${path.basename(vmapPath, '.vmap')}_${stamp}.vmap`);
+  fs.copyFileSync(vmapPath, backupPath);
+  return backupPath;
+}
+
+function saveVmap(vmapPath, text, makeBackup = true) {
+  try {
+    if (!vmapPath) return { ok: false, error: 'Missing VMAP path.' };
+    if (path.extname(vmapPath).toLowerCase() !== '.vmap') return { ok: false, error: 'Only .vmap files can be written.' };
+    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'VMAP data is empty.' };
+
+    ensureFolder(path.dirname(vmapPath));
+    const backupPath = makeBackup ? createBackup(vmapPath) : null;
+    const tempPath = `${vmapPath}.eph-tmp`;
+    fs.writeFileSync(tempPath, text, 'utf8');
+    fs.renameSync(tempPath, vmapPath);
+    return { ok: true, backupPath, bytes: Buffer.byteLength(text, 'utf8') };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 function createMainWindow() {
@@ -168,20 +215,15 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
   mainWindow.on('close', () => {
-    if (lastRendererSnapshot?.project) {
-      saveSession(lastRendererSnapshot.project, lastRendererSnapshot.uiState);
-    }
+    if (lastRendererSnapshot?.project) saveSession(lastRendererSnapshot.project, lastRendererSnapshot.uiState);
   });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 app.whenReady().then(() => {
   ensureFolder(getAutosavesRoot());
+  ensureFolder(getBackupsRoot());
   createMainWindow();
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
@@ -194,6 +236,8 @@ app.on('window-all-closed', () => {
 ipcMain.handle('app:get-startup-state', () => getStartupState());
 ipcMain.handle('project:open-vmap', () => openExistingVmap());
 ipcMain.handle('project:create', createNewProject);
+ipcMain.handle('project:load-vmap', (event, vmapPath) => loadVmap(vmapPath));
+ipcMain.handle('project:save-vmap', (event, vmapPath, text, backup) => saveVmap(vmapPath, text, backup !== false));
 ipcMain.handle('project:continue-last', () => {
   const startup = getStartupState();
   if (!startup.hasLastSession) return null;
