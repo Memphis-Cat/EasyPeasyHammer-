@@ -33,6 +33,7 @@
       "asset-host.js",
       "app-services.js",
       "collab-service.js",
+      "collab-network.js",
       "src/**/*",
       "assets/**/*",
       "package.json"
