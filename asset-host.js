@@ -3,6 +3,10 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const { app, ipcMain } = require('electron');
+const { registerAppServices } = require('./app-services');
+
+registerAppServices({ ipcMain, app });
 
 class AssetHost {
   constructor(options = {}) {
