@@ -66,6 +66,17 @@
     markDirty(`Repaired texture projection on ${object.name}`);
   }
 
+  const originalFaceLabel = faceLabel;
+  faceLabel = function(index, count) {
+    const object = current();
+    if (object?.type === 'part' && object.faces?.[index] && window.EPH_FIDELITY_V2?.semanticFaceName) {
+      const name = window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, object.faces[index]);
+      const names = object.faces.map(face => window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, face));
+      if (new Set(names).size === names.length) return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+    return originalFaceLabel(index, count);
+  };
+
   const originalApplyMaterial = applyMaterial;
   applyMaterial = function(path) {
     const object = ensureObject(current());
