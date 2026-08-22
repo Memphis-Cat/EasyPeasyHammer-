@@ -1,0 +1,44 @@
+{
+  "byanca": true,
+  "name": "easypeasyhammer",
+  "version": "0.2.0",
+  "description": "EasyPeasyHammer collaborative CS2 map editor",
+  "main": "main.js",
+  "author": "Memphis-Cat",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.memphiscat.easypeasyhammer",
+    "productName": "EasyPeasyHammer",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
