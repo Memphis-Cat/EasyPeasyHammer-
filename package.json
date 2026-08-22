@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "main.js",
   "author": "Memphis-Cat",
@@ -12,6 +12,9 @@
     "build": "electron-builder --win",
     "build:portable": "electron-builder --win portable",
     "build:installer": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "electron": "^37.2.6",
@@ -29,10 +32,7 @@
       "package.json"
     ],
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
+      "target": ["nsis", "portable"]
     },
     "nsis": {
       "oneClick": false,
