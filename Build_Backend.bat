@@ -4,16 +4,28 @@ setlocal
 cd /d "%~dp0"
 
 where dotnet >nul 2>nul
-if errorlevel 1 (
-    echo .NET 10 SDK is required to build the CS2 asset backend.
-    echo Install the .NET 10 SDK and run this file again.
-    pause
-    exit /b 1
-)
+if errorlevel 1 goto nodotnet
 
 echo Building Source 2 asset backend...
 dotnet publish "backend\EasyPeasyHammer.AssetHost\EasyPeasyHammer.AssetHost.csproj" -c Release -r win-x64 --self-contained true
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto error
 
+echo.
 echo Asset backend ready.
+goto done
+
+:nodotnet
+echo.
+echo .NET 10 SDK is required to build the CS2 asset backend.
+echo Install the .NET 10 SDK and run this file again.
+goto error
+
+:error
+echo.
+echo Backend build stopped because of an error. Check the output above.
+
+echo.
+:done
+pause
 endlocal
+exit /b
