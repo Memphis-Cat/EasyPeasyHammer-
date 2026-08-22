@@ -153,6 +153,7 @@ function loadPass(src, marker, module = false) {
     await loadPass('default-part.js', 'ephDefaultPart');
     await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
     await loadPass('advanced-ui.js', 'ephAdvancedUi');
+    await loadPass('collab-runtime.js', 'ephCollabRuntime');
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
   } catch (error) {
