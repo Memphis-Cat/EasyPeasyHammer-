@@ -10,13 +10,27 @@ goto backend
 :installnode
 echo Installing Electron dependencies...
 call npm install
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto error
 
 :backend
 if exist "backend\EasyPeasyHammer.AssetHost\bin\Release\net10.0\win-x64\publish\EasyPeasyHammer.AssetHost.exe" goto run
 call Build_Backend.bat
-if errorlevel 1 exit /b 1
+if errorlevel 1 goto error
 
 :run
 call npm start
+if errorlevel 1 goto error
+
+echo.
+echo EasyPeasyHammer closed normally.
+goto done
+
+:error
+echo.
+echo EasyPeasyHammer stopped because of an error. Check the output above.
+
+echo.
+:done
+pause
 endlocal
+exit /b
