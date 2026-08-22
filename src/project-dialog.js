@@ -154,6 +154,7 @@ function loadPass(src, marker, module = false) {
     await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
     await loadPass('advanced-ui.js', 'ephAdvancedUi');
     await loadPass('collab-runtime.js', 'ephCollabRuntime');
+    await loadPass('collab-visuals.js', 'ephCollabVisuals', true);
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
   } catch (error) {
