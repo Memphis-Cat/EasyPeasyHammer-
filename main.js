@@ -16,6 +16,12 @@ function getAutosavesRoot() { return path.join(getDocumentsRoot(), 'Autosaves');
 function getBackupsRoot() { return path.join(getDocumentsRoot(), 'Backups'); }
 function getSessionFile() { return path.join(app.getPath('userData'), 'last-session.json'); }
 function getAssetConfigFile() { return path.join(app.getPath('userData'), 'asset-config.json'); }
+function getAppSideRoot() {
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return path.resolve(process.env.PORTABLE_EXECUTABLE_DIR);
+  if (app.isPackaged) return path.dirname(process.execPath);
+  return __dirname;
+}
+function getProjectsRoot() { return path.join(getAppSideRoot(), 'Projects'); }
 function ensureFolder(folderPath) { fs.mkdirSync(folderPath, { recursive: true }); }
 function safeReadJson(filePath, fallback = null) { try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return fallback; } }
 function safeWriteJson(filePath, value) { ensureFolder(path.dirname(filePath)); fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8'); }
@@ -57,14 +63,35 @@ async function openExistingVmap() {
 }
 
 async function createNewProject(event, projectName) {
-  const cleanName = sanitizeName(projectName || 'Untitled');
-  const result = await dialog.showOpenDialog(mainWindow, { title: 'Choose where to create the project folder', properties: ['openDirectory', 'createDirectory'] });
-  if (result.canceled || !result.filePaths[0]) return null;
-  const projectFolder = path.join(result.filePaths[0], cleanName);
-  ensureFolder(projectFolder);
-  const project = projectFromPath(path.join(projectFolder, `${cleanName}.vmap`), 'new-project');
-  saveSession(project, null);
-  return { project, uiState: null };
+  const requestedName = sanitizeName(projectName || 'Untitled');
+  try {
+    const projectsRoot = getProjectsRoot();
+    ensureFolder(projectsRoot);
+
+    let cleanName = requestedName;
+    let suffix = 2;
+    let projectFolder = path.join(projectsRoot, cleanName);
+    let vmapPath = path.join(projectFolder, `${cleanName}.vmap`);
+
+    while (fs.existsSync(projectFolder) || fs.existsSync(vmapPath)) {
+      cleanName = `${requestedName}_${suffix++}`;
+      projectFolder = path.join(projectsRoot, cleanName);
+      vmapPath = path.join(projectFolder, `${cleanName}.vmap`);
+    }
+
+    ensureFolder(projectFolder);
+    const project = projectFromPath(vmapPath, 'new-project');
+    saveSession(project, null);
+    return { project, uiState: null, projectsRoot };
+  } catch (error) {
+    await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Could not create project',
+      message: 'EasyPeasyHammer could not create the Projects folder beside the application.',
+      detail: error.message
+    });
+    return null;
+  }
 }
 
 function loadVmap(vmapPath) {
@@ -130,6 +157,7 @@ async function launchWorkshopTools() {
 app.whenReady().then(async () => {
   ensureFolder(getAutosavesRoot());
   ensureFolder(getBackupsRoot());
+  ensureFolder(getProjectsRoot());
   const assetConfig = safeReadJson(getAssetConfigFile(), {});
   assetHost = new AssetHost({ cacheRoot: path.join(app.getPath('userData'), 'AssetCache'), cs2Path: assetConfig?.cs2Root || null });
   assetHost.start();
