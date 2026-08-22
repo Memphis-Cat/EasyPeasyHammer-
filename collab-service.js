@@ -227,6 +227,10 @@ function registerCollaboration({ ipcMain, app }) {
       const packet = { type: 'snapshot', revision: state.revision, snapshot: msg.snapshot, sourcePeer: peer.peerId };
       broadcastJson(packet, peer.ws);
       emit(packet);
+    } else if (msg?.type === 'live-object' && msg.object?.id) {
+      const packet = { type: 'live-object', peerId: peer.peerId, username: peer.username, object: msg.object };
+      broadcastJson(packet, peer.ws);
+      emit(packet);
     } else if (msg?.type === 'selection') {
       const packet = { type: 'selection', peerId: peer.peerId, username: peer.username, selectedId: msg.selectedId || null };
       broadcastJson(packet, peer.ws); emit(packet);
@@ -274,7 +278,7 @@ function registerCollaboration({ ipcMain, app }) {
   function handleClientJson(msg) {
     if (msg?.type === 'snapshot') { state.revision = msg.revision || state.revision; state.snapshot = msg.snapshot; emit(msg); }
     else if (msg?.type === 'presence') { state.users = msg.users || []; updateUsers(); }
-    else if (msg?.type === 'selection' || msg?.type === 'cursor') emit(msg);
+    else if (msg?.type === 'live-object' || msg?.type === 'selection' || msg?.type === 'cursor') emit(msg);
     else if (msg?.type === 'chat') { state.chatHistory.push(msg.message); if (state.chatHistory.length > 300) state.chatHistory.shift(); emit(msg); }
     else if (msg?.type === 'file-start') beginIncoming(msg.meta, msg.meta?.peerId, msg.meta?.username);
     else if (msg?.type === 'file-end') finishIncoming(msg.transferId);
@@ -379,6 +383,13 @@ function registerCollaboration({ ipcMain, app }) {
       broadcastJson({ type: 'snapshot', revision: state.revision, snapshot, sourcePeer: 'owner' });
     } else sendClientJson({ type: 'snapshot', snapshot, baseRevision: state.revision });
     return { ok: true, revision: state.revision };
+  });
+  ipcMain.handle('collab:send-live-object', (event, object) => {
+    if (!state.connected || !object?.id) return false;
+    const packet = { type: 'live-object', peerId: state.peerId || 'owner', username: state.username || 'You', object };
+    if (state.role === 'host') { broadcastJson(packet); emit(packet); }
+    else sendClientJson({ type: 'live-object', object });
+    return true;
   });
   ipcMain.handle('collab:send-selection', (event, selectedId) => {
     if (!state.connected) return false;
