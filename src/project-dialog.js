@@ -139,4 +139,5 @@ function loadModuleOnce(src, marker) {
 loadClassicOnce('interaction-pass.js', 'ephInteractionPass');
 loadModuleOnce('advanced-viewport.js', 'ephAdvancedViewport');
 loadClassicOnce('advanced-ui.js', 'ephAdvancedUi');
+loadClassicOnce('bell1.js', 'ephBell1');
 loadClassicOnce('collab-ui.js', 'ephCollabUi');
