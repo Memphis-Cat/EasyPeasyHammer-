@@ -120,7 +120,7 @@
   if (fileNew) fileNew.onclick = open;
 })();
 
-function loadPass(src, marker, module = false) {
+function loadPass(src, marker) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-${marker}]`);
     if (existing) {
@@ -133,7 +133,6 @@ function loadPass(src, marker, module = false) {
     }
 
     const script = document.createElement('script');
-    if (module) script.type = 'module';
     script.src = src;
     script.dataset[marker] = '1';
     script.addEventListener('load', () => { script.dataset.loaded = '1'; resolve(); }, { once: true });
@@ -142,9 +141,9 @@ function loadPass(src, marker, module = false) {
   });
 }
 
-async function safeLoadPass(src, marker, module = false) {
+async function safeLoadPass(src, marker) {
   try {
-    await loadPass(src, marker, module);
+    await loadPass(src, marker);
     return true;
   } catch (error) {
     console.error(`EasyPeasyHammer pass failed: ${src}`, error);
@@ -152,12 +151,27 @@ async function safeLoadPass(src, marker, module = false) {
   }
 }
 
+async function ensureViewportBundle() {
+  if (window.EPH3D) return true;
+
+  await new Promise(resolve => setTimeout(resolve, 250));
+  if (window.EPH3D) return true;
+
+  const loaded = await safeLoadPass('bundled/viewport3d.bundle.js', 'ephViewport3dBundle');
+  if (!loaded || !window.EPH3D) {
+    console.error('EasyPeasyHammer renderer did not initialize.');
+    return false;
+  }
+  return true;
+}
+
 (async () => {
   await safeLoadPass('interaction-pass.js', 'ephInteractionPass');
-  await safeLoadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
-  await safeLoadPass('hammer-fidelity.js', 'ephHammerFidelity', true);
-  await safeLoadPass('fidelity-v2.js', 'ephFidelityV2', true);
-  await safeLoadPass('texture-projection-v4.js', 'ephTextureProjectionV4', true);
+  await ensureViewportBundle();
+  await safeLoadPass('bundled/advanced-viewport.bundle.js', 'ephAdvancedViewportBundle');
+  await safeLoadPass('bundled/hammer-fidelity.bundle.js', 'ephHammerFidelityBundle');
+  await safeLoadPass('bundled/fidelity-v2.bundle.js', 'ephFidelityV2Bundle');
+  await safeLoadPass('bundled/texture-projection-v4.bundle.js', 'ephTextureProjectionV4Bundle');
   await safeLoadPass('load-acceleration.js', 'ephLoadAcceleration');
   await safeLoadPass('default-part.js', 'ephDefaultPart');
   await safeLoadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
@@ -165,7 +179,7 @@ async function safeLoadPass(src, marker, module = false) {
   await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
   await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
   await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
-  await safeLoadPass('collab-visuals.js', 'ephCollabVisuals', true);
+  await safeLoadPass('bundled/collab-visuals.bundle.js', 'ephCollabVisualsBundle');
   await safeLoadPass('bell1.js', 'ephBell1');
   await safeLoadPass('collab-ui.js', 'ephCollabUi');
 })();
