@@ -1,5 +1,10 @@
 // byanca
 (() => {
+  const uiFixes = document.createElement('link');
+  uiFixes.rel = 'stylesheet';
+  uiFixes.href = 'ui-fixes.css';
+  document.head.appendChild(uiFixes);
+
   const applyViewportTheme = viewport => {
     if (!viewport) return;
     if (viewport.scene?.background?.set) viewport.scene.background.set(0x17181b);
