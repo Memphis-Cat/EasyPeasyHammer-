@@ -22,11 +22,6 @@ set "BACKEND_CODE=%ERRORLEVEL%"
 set "EPH_NO_PAUSE="
 if not "%BACKEND_CODE%"=="0" goto error
 
-echo.
-echo Generating EasyPeasyHammer application icon...
-node generate-icon.js
-if errorlevel 1 goto error
-
 :run
 echo.
 echo Starting EasyPeasyHammer...
