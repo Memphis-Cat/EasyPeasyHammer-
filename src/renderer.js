@@ -1,443 +1,91 @@
 // byanca
 const api = window.easyPeasyHammer;
+const VMAP = window.EPH_VMAP;
+const $ = id => document.getElementById(id);
+const esc = v => String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const cap = v => String(v).charAt(0).toUpperCase()+String(v).slice(1);
 
-const state = {
-  project: null,
-  tool: 'select',
-  assetTab: 'materials',
-  bottomTab: 'console',
-  selectedId: 'part-1',
-  grid: true,
-  snap: true,
-  space: 'Local',
-  view: 'Perspective',
-  shading: 'Lit',
-  selectedFaces: new Set(['front']),
-  logs: [],
-  objects: [
-    { id: 'world', name: 'World', type: 'world', parent: null, expanded: true },
-    { id: 'arena', name: 'Arena_Center', type: 'folder', parent: 'world', expanded: true },
-    { id: 'center-ramp', name: 'Center_Ramp', type: 'part', parent: 'arena' },
-    { id: 'center-box', name: 'Center_Box', type: 'part', parent: 'arena' },
-    { id: 'mid-crate', name: 'Mid_Crate', type: 'prop', parent: 'arena' },
-    { id: 'part-1', name: 'Part_Blockout_01', type: 'part', parent: 'arena', position: [384, -256, 64], rotation: [0, 0, 0], scale: [1, 1, 1], size: [512, 32, 128], collision: true, blockPlayers: true, blockGrenades: true, blockBullets: true, materials: { top: 'ERROR', bottom: 'ERROR', left: 'ERROR', right: 'ERROR', front: 'ERROR', back: 'ERROR' } },
-    { id: 'left-cover', name: 'Left_Cover', type: 'folder', parent: 'world', expanded: false },
-    { id: 'right-cover', name: 'Right_Cover', type: 'folder', parent: 'world', expanded: false },
-    { id: 'ct-spawn', name: 'CT_Spawn', type: 'entity', parent: 'world' },
-    { id: 't-spawn', name: 'T_Spawn', type: 'entity', parent: 'world' },
-    { id: 'skybox', name: 'Skybox', type: 'folder', parent: 'world', expanded: false },
-    { id: 'props', name: 'Props', type: 'folder', parent: 'world', expanded: false }
+const S={project:null,doc:null,objects:[],selectedId:null,faces:new Set(['front']),tool:'select',assetTab:'materials',bottomTab:'console',grid:true,gridSize:64,snap:true,angleSnap:15,space:'Local',view:'Perspective',shading:'Lit',viewport:null,camera:null,undo:[],redo:[],dirty:false,logs:[],autosaveTimer:null,lastAutosave:0};
+const A={
+  materials:[
+    {name:'Error / Missing',path:'ERROR'},
+    {name:'Dev Measure Generic',path:'materials/dev/dev_measuregeneric01b.vmat'},
+    {name:'Reflectivity 30',path:'materials/dev/reflectivity_30.vmat'},
+    {name:'Player Clip',path:'materials/tools/toolsplayerclip.vmat'},
+    {name:'Grenade Clip',path:'materials/tools/toolsgrenadeclip.vmat'},
+    {name:'Skybox',path:'materials/tools/toolsskybox.vmat'}
+  ],
+  models:[
+    {name:'Terrace Chair',path:'models/generic/terrace_set_01/terrace_chair_01.vmdl'},
+    {name:'Wooden Crate',path:'models/props/de_dust/wooden_crate_128.vmdl'}
+  ],
+  props:[
+    {name:'Static Prop',className:'prop_static',model:'models/generic/terrace_set_01/terrace_chair_01.vmdl'},
+    {name:'Dynamic Prop',className:'prop_dynamic',model:''}
+  ],
+  entities:[
+    {name:'CT Spawn',className:'info_player_counterterrorist'},
+    {name:'T Spawn',className:'info_player_terrorist'},
+    {name:'Light Omni',className:'light_omni2'},
+    {name:'Light Environment',className:'light_environment'},
+    {name:'Trigger Multiple',className:'trigger_multiple'},
+    {name:'Info Target',className:'info_target'}
   ]
 };
 
-const assets = {
-  materials: ['Concrete Wall', 'Concrete Floor', 'Metal Panel', 'Plaster', 'Wood', 'ERROR Material'],
-  models: ['Wooden Crate 01', 'Wooden Crate 02', 'Metal Crate', 'Barrel', 'Ladder', 'Fence'],
-  props: ['Wooden Crate', 'Ammo Crate', 'Industrial Barrel', 'Concrete Barrier', 'Pallet', 'Lamp'],
-  entities: ['CT Spawn', 'T Spawn', 'Light', 'Trigger', 'Skybox', 'Player Clip']
-};
+function icons(){const m=window.EPH_ICONS||{};document.querySelectorAll('img[src]').forEach(i=>{const s=i.getAttribute('src');if(m[s])i.src=m[s];});}
+function toast(t){const e=$('toast');e.textContent=t;e.classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.add('hidden'),2200);}
+function log(t,k='info'){S.logs.push({t:new Date().toLocaleTimeString(),m:t,k});if(S.logs.length>250)S.logs.shift();if(S.bottomTab==='console')bottom();}
+function current(){return S.objects.find(o=>o.id===S.selectedId)||null;}
+function edit(o){if(!o||['world','folder'].includes(o.type))return o;o.position??=[0,0,0];o.rotation??=[0,0,0];o.scale??=[1,1,1];o.size??=[64,64,64];o.collision??=true;o.blockPlayers??=['part','prop'].includes(o.type);o.blockGrenades??=false;o.blockBullets??=false;o.visible??=true;o.materials??={right:'ERROR',left:'ERROR',front:'ERROR',back:'ERROR',top:'ERROR',bottom:'ERROR'};return o;}
+function extras(){const x={};for(const o of S.objects){if(!o.dmxId)continue;x[o.id]={name:o.name,size:o.size,collision:o.collision,blockPlayers:o.blockPlayers,blockGrenades:o.blockGrenades,blockBullets:o.blockBullets,visible:o.visible,materials:o.materials,className:o.className,model:o.model};}return x;}
+function applyExtras(x){if(!x)return;for(const o of S.objects)if(x[o.id])Object.assign(o,x[o.id]);}
+function sync(){if(!S.doc)return;S.objects.forEach(o=>o.dmxId&&VMAP.applyObjectToDocument(S.doc,o));}
+function text(){sync();return S.doc?VMAP.stringify(S.doc):'';}
+function snapshot(){return{phase:3,tool:S.tool,assetTab:S.assetTab,bottomTab:S.bottomTab,selectedId:S.selectedId,selectedFaces:[...S.faces],grid:S.grid,gridSize:S.gridSize,snap:S.snap,angleSnap:S.angleSnap,space:S.space,view:S.view,shading:S.shading,cameraState:S.viewport?.getCameraState?.()||S.camera,objectExtras:extras(),vmapText:text()};}
+function restoreUi(u){if(!u)return;for(const k of['tool','assetTab','bottomTab','selectedId','grid','gridSize','snap','angleSnap','space','view','shading'])if(u[k]!==undefined)S[k]=u[k];if(u.selectedFaces?.length)S.faces=new Set(u.selectedFaces);S.camera=u.cameraState||null;}
+function title(){if(!S.project)return;const s=S.dirty?' *':'';$('projectTitle').textContent=`${S.project.name}.vmap${s}`;$('mapStatus').textContent=`Map: ${S.project.name}.vmap${s}`;}
+function dirty(msg){S.dirty=true;title();if(msg)log(msg);clearTimeout(S.autosaveTimer);S.autosaveTimer=setTimeout(()=>autosave(),900);}
+async function autosave(show=false){if(!S.project||!S.doc)return;const r=await api.autosave({project:S.project,uiState:snapshot()});if(r?.ok){S.lastAutosave=Date.now();$('autosaveStatus').textContent=`Autosaved ${new Date(r.savedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;}if(show)toast('Autosaved editor session');}
+function history(){if(!S.doc)return;S.undo.push({text:text(),extras:extras(),id:S.selectedId});if(S.undo.length>40)S.undo.shift();S.redo=[];}
+function restoreHistory(h){if(!h)return;try{S.doc=VMAP.parse(h.text);S.objects=VMAP.extractObjects(S.doc).map(edit);applyExtras(h.extras);S.selectedId=S.objects.some(o=>o.id===h.id)?h.id:'world';render();S.viewport?.setObjects(S.objects,S.selectedId);dirty();}catch(e){log(`History restore failed: ${e.message}`,'warning');}}
+function undo(){if(!S.undo.length)return;S.redo.push({text:text(),extras:extras(),id:S.selectedId});restoreHistory(S.undo.pop());}
+function redo(){if(!S.redo.length)return;S.undo.push({text:text(),extras:extras(),id:S.selectedId});restoreHistory(S.redo.pop());}
 
-const $ = (id) => document.getElementById(id);
-const esc = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
-const cap = (value) => value.charAt(0).toUpperCase() + value.slice(1);
-const current = () => state.objects.find((o) => o.id === state.selectedId) || null;
+async function loadProject(project,u){S.project=project;restoreUi(u);let src=u?.vmapText;if(!src){const r=await api.loadVmap(project.vmapPath);if(!r?.ok){toast('Could not read VMAP');log(r?.error||'Could not read VMAP','warning');return false;}src=r.text;}try{S.doc=VMAP.parse(src);const v=VMAP.validate(S.doc);if(!v.ok)throw Error(v.errors.join(' '));}catch(e){toast('This VMAP could not be parsed');log(`VMAP parser: ${e.message}`,'warning');return false;}S.objects=VMAP.extractObjects(S.doc).map(edit);applyExtras(u?.objectExtras);if(!S.objects.some(o=>o.id===S.selectedId))S.selectedId=S.objects.find(o=>o.type!=='world')?.id||'world';S.undo=[];S.redo=[];S.dirty=Boolean(u?.vmapText);$('startupScreen').classList.add('hidden');$('editorScreen').classList.remove('hidden');render();connectViewport();S.viewport?.setObjects(S.objects,S.selectedId);if(S.camera)S.viewport?.setCameraState(S.camera);else S.viewport?.frameAll();title();await autosave();return true;}
+async function home(){const d=await api.getStartupState();$('editorScreen').classList.add('hidden');$('startupScreen').classList.remove('hidden');const p=d?.lastSession?.project;$('resumePanel').classList.toggle('hidden',!p);$('forgetSessionButton').classList.toggle('hidden',!p);if(p){$('resumeName').textContent=p.name||'Untitled';$('resumePath').textContent=p.vmapPath||'';}}
+async function openMap(){const r=await api.openVmap();if(!r)return;const p=r.project||r;if(await loadProject(p,r.uiState||null))log(`Opened ${p.vmapPath}`,'success');}
+async function continueMap(){const r=await api.continueLast();if(r?.project&&await loadProject(r.project,r.uiState||null))log(`Continued ${r.project.name}`,'success');}
+function newModal(){$('newProjectName').value='';$('newProjectModal').classList.remove('hidden');setTimeout(()=>$('newProjectName').focus(),20);}
+async function newProject(){const name=$('newProjectName').value.trim();if(!name)return toast('Enter a project name');const r=await api.createProject(name);if(!r)return;const p=r.project||r;const d=VMAP.createEmptyDocument();const w=await api.saveVmap(p.vmapPath,VMAP.stringify(d),false);if(!w?.ok)return toast('Could not create VMAP file');$('newProjectModal').classList.add('hidden');await loadProject(p,null);S.doc=d;S.objects=VMAP.extractObjects(d).map(edit);S.selectedId='world';S.dirty=false;render();S.viewport?.setObjects(S.objects,S.selectedId);title();log(`Created ${p.name}`,'success');}
+async function save(show=true){if(!S.project||!S.doc)return;const r=await api.saveVmap(S.project.vmapPath,text(),true);if(!r?.ok){toast('Save failed');return log(`Save failed: ${r?.error||'unknown error'}`,'warning');}S.dirty=false;title();await autosave();$('autosaveStatus').textContent=`Saved ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}`;log(`Saved ${S.project.vmapPath}`,'success');if(show)toast('VMAP saved');}
+async function exitMap(){if(!S.project)return;await autosave();await api.returnHome({project:S.project,uiState:snapshot()});S.viewport?.setObjects([],null);S.project=null;S.doc=null;S.objects=[];S.selectedId=null;await home();}
 
-function hydrateIcons() {
-  const icons = window.EPH_ICONS || {};
-  document.querySelectorAll('img[src]').forEach((img) => {
-    const raw = img.getAttribute('src');
-    if (icons[raw]) img.src = icons[raw];
-  });
-}
+function connectViewport(){const v=window.EPH3D;if(!v||S.viewport===v)return;S.viewport=v;v.onSelect(id=>{S.selectedId=id;tree();properties();});v.onTransformStart(history);v.onChange((o,commit)=>{VMAP.applyObjectToDocument(S.doc,o);properties();if(commit)dirty(`Changed ${o.name}`);});v.onCameraChange(c=>S.camera=c);viewportSettings();}
+function viewportSettings(){if(!S.viewport)return;S.viewport.setTool(['move','rotate','scale'].includes(S.tool)?S.tool:'select');S.viewport.setGrid(S.grid,S.gridSize);S.viewport.setSnap(S.snap,S.gridSize,S.angleSnap);S.viewport.setSpace(S.space);S.viewport.setShading(S.shading);}
+function render(){assets();tools();tree();properties();bottom();viewportControls();icons();}
 
-function toast(message) {
-  const el = $('toast');
-  el.textContent = message;
-  el.classList.remove('hidden');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.add('hidden'), 1800);
-}
+function assets(){document.querySelectorAll('#assetTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===S.assetTab));const q=$('assetSearch').value.trim().toLowerCase();const list=(A[S.assetTab]||[]).filter(x=>`${x.name} ${x.path||''} ${x.className||''}`.toLowerCase().includes(q));$('assetGrid').innerHTML=list.map((x,i)=>`<button class="asset-card" data-i="${i}" title="${esc(x.path||x.className||x.model||'')}"><div class="asset-thumb">${S.assetTab==='materials'?'MAT':S.assetTab==='entities'?'ENT':S.assetTab==='props'?'PROP':'MDL'}</div><div class="asset-name">${esc(x.name)}</div></button>`).join('');$('assetCount').textContent=`${list.length} items`;$('assetGrid').querySelectorAll('.asset-card').forEach(c=>{const x=list[+c.dataset.i];c.onclick=()=>{document.querySelectorAll('.asset-card').forEach(y=>y.classList.remove('selected'));c.classList.add('selected');if(S.assetTab==='materials'&&current()?.type==='part')material(x.path);};c.ondblclick=()=>{if(S.assetTab==='entities')addEntity(x);else if(['props','models'].includes(S.assetTab))addProp(x);};});}
+function tools(){document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===S.tool));}
+function kids(id){return S.objects.filter(o=>o.parent===id);}
+function tree(){const r=$('sceneTree');r.innerHTML='';const q=$('sceneSearch').value.trim().toLowerCase();function row(o,d){const k=kids(o.id);if(q&&!o.name.toLowerCase().includes(q)&&!k.some(x=>x.name.toLowerCase().includes(q)))return;const x=document.createElement('div');x.className=`tree-row${o.id===S.selectedId?' selected':''}`;const ic=o.type==='world'?'hierarchy_world.png':o.type==='folder'?(o.expanded?'hierarchy_folder_open.png':'hierarchy_folder_closed.png'):'hierarchy_part.png';const ch=k.length?(o.expanded?'hierarchy_chevron_down.png':'hierarchy_chevron_right.png'):null;x.innerHTML=`<span class="tree-indent" style="width:${d*14}px"></span>${ch?`<img class="tree-chevron" src="../assets/icons/hierarchy/${ch}">`:'<span class="tree-chevron"></span>'}<img class="tree-icon" src="../assets/icons/hierarchy/${ic}"><span class="tree-name">${esc(o.name)}</span>${o.dmxId?`<button class="tree-eye" title="Visibility">${o.visible===false?'○':'●'}</button>`:''}`;r.appendChild(x);icons();x.onclick=e=>{if(e.target.classList.contains('tree-eye')){e.stopPropagation();history();o.visible=o.visible===false;VMAP.applyObjectToDocument(S.doc,o);S.viewport?.updateObject(o);dirty(`Changed visibility on ${o.name}`);tree();return;}if(k.length&&e.target.classList.contains('tree-chevron'))o.expanded=!o.expanded;else{S.selectedId=o.id;S.viewport?.select?.(o.id,false);}tree();properties();};if(o.expanded)k.forEach(y=>row(y,d+1));}S.objects.filter(o=>o.parent==null).forEach(o=>row(o,0));}
+function xyz(label,key,a,step='.1'){return`<div class="xyz-row"><label>${label}</label>${a.map((v,i)=>`<input class="prop-input prop-value" data-key="${key}" data-i="${i}" type="number" step="${step}" value="${v}">`).join('')}</div>`;}
+function toggle(label,key,v){return`<div class="toggle-row"><span>${label}</span><button class="toggle ${v?'on':''}" data-toggle="${key}"></button></div>`;}
+function bindName(o){$('objectName')?.addEventListener('change',e=>{history();o.name=e.target.value.trim()||o.name;VMAP.applyObjectToDocument(S.doc,o);tree();dirty(`Renamed to ${o.name}`);});}
+function properties(){const o=edit(current());if(!o){$('propertiesContent').innerHTML='<div class="collab-state">Nothing selected.</div>';return;}if(['world','folder'].includes(o.type)){$('propertiesContent').innerHTML=`<div class="property-name-row"><input id="objectName" class="prop-input" value="${esc(o.name)}"></div><div class="property-section"><div class="property-section-title">${o.type==='world'?'Map World':'Group'}</div></div>`;bindName(o);return;}const fs=['right','left','front','back','top','bottom'];const entity=['entity','prop'].includes(o.type)?`<div class="property-section"><div class="property-section-title">Entity</div><div class="field-row"><label>Class</label><input id="classNameField" class="prop-input" value="${esc(o.className||'info_target')}"></div><div class="field-row"><label>Model</label><input id="modelField" class="prop-input" value="${esc(o.model||'')}"></div></div>`:'';const mats=o.type==='part'?`<div class="property-section"><div class="property-section-title">Face Materials</div><div class="face-selection">${fs.map(f=>`<button class="face-chip ${S.faces.has(f)?'active':''}" data-face="${f}">${cap(f)}</button>`).join('')}</div><div class="field-row"><label>Selected</label><div class="material-apply-row"><input id="selectedMaterial" class="prop-input" value="${esc(o.materials?.[[...S.faces][0]]||'ERROR')}"><button id="applyMaterial" class="mini-button">Apply</button></div></div>${fs.map(f=>`<div class="face-row"><label>${cap(f)}</label><div class="material-preview ${o.materials?.[f]==='ERROR'?'error':''}"></div><input class="prop-input face-material-input" data-face-material="${f}" value="${esc(o.materials?.[f]||'ERROR')}"></div>`).join('')}</div>`:'';$('propertiesContent').innerHTML=`<div class="property-name-row"><input id="objectName" class="prop-input" value="${esc(o.name)}"><span class="object-type-pill">${esc(o.type)}</span></div><div class="property-section"><div class="property-section-title">Transform</div>${xyz('Position','position',o.position)}${xyz('Rotation','rotation',o.rotation)}${xyz('Scale','scale',o.scale)}</div>${o.type==='part'?`<div class="property-section"><div class="property-section-title">Size (World Units)</div>${xyz('Size','size',o.size,'1')}</div>`:''}<div class="property-section"><div class="property-section-title">Collision / Gameplay</div>${toggle('Colliding','collision',o.collision)}${toggle("Players can't pass through",'blockPlayers',o.blockPlayers)}${toggle("Grenades can't pass through",'blockGrenades',o.blockGrenades)}${toggle("Bullets can't pass through",'blockBullets',o.blockBullets)}</div>${entity}${mats}`;bindName(o);document.querySelectorAll('.prop-value').forEach(i=>i.onchange=()=>{const v=Number(i.value);if(!Number.isFinite(v))return;history();o[i.dataset.key][+i.dataset.i]=v;VMAP.applyObjectToDocument(S.doc,o);S.viewport?.updateObject(o);dirty(`Changed ${o.name}`);});document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{history();o[b.dataset.toggle]=!o[b.dataset.toggle];b.classList.toggle('on',o[b.dataset.toggle]);VMAP.applyObjectToDocument(S.doc,o);dirty(`Changed ${b.dataset.toggle}`);});document.querySelectorAll('[data-face]').forEach(b=>b.onclick=e=>{const f=b.dataset.face;if(e.ctrlKey){S.faces.has(f)?S.faces.delete(f):S.faces.add(f);}else S.faces=new Set([f]);if(!S.faces.size)S.faces.add(f);properties();});$('applyMaterial')?.addEventListener('click',()=>material($('selectedMaterial').value.trim()||'ERROR'));$('selectedMaterial')?.addEventListener('keydown',e=>e.key==='Enter'&&material(e.target.value.trim()||'ERROR'));document.querySelectorAll('[data-face-material]').forEach(i=>i.onchange=()=>{history();o.materials[i.dataset.faceMaterial]=i.value.trim()||'ERROR';VMAP.applyObjectToDocument(S.doc,o);S.viewport?.updateObject(o);dirty(`Changed ${i.dataset.faceMaterial} material`);properties();});$('classNameField')?.addEventListener('change',e=>{history();o.className=e.target.value.trim()||o.className;VMAP.applyObjectToDocument(S.doc,o);S.viewport?.updateObject(o);dirty('Changed entity class');});$('modelField')?.addEventListener('change',e=>{history();o.model=e.target.value.trim();VMAP.applyObjectToDocument(S.doc,o);dirty('Changed model');});}
+function material(path){const o=edit(current());if(!o||o.type!=='part')return toast('Select a Part first');history();for(const f of S.faces)o.materials[f]=path||'ERROR';VMAP.applyObjectToDocument(S.doc,o);S.viewport?.updateObject(o);properties();dirty(`Applied material to ${[...S.faces].join(', ')}`);}
+function addPart(){if(!S.doc)return;history();const t=S.viewport?.orbit?.target,g=S.snap?S.gridSize:1,s=x=>Math.round(x/g)*g,p=t?[s(t.x),s(t.y),s(t.z+64)]:[0,0,64];const o=edit(VMAP.addPart(S.doc,{position:p,size:[128,128,128],materials:{right:'ERROR',left:'ERROR',front:'ERROR',back:'ERROR',top:'ERROR',bottom:'ERROR'}}));o.name=`Part_${String(S.objects.filter(x=>x.type==='part').length+1).padStart(3,'0')}`;S.objects.push(o);S.selectedId=o.id;render();S.viewport?.setObjects(S.objects,o.id);dirty(`Created ${o.name}`);}
+function addEntity(a){if(!S.doc)return;history();const t=S.viewport?.orbit?.target,p=t?[t.x,t.y,t.z]:[0,0,16],o=edit(VMAP.addEntity(S.doc,{className:a.className,position:p}));S.objects.push(o);S.selectedId=o.id;render();S.viewport?.setObjects(S.objects,o.id);dirty(`Added ${a.name}`);}
+function addProp(a){if(!S.doc)return;history();const t=S.viewport?.orbit?.target,p=t?[t.x,t.y,t.z+32]:[0,0,32],model=a.model||a.path||'',o=edit(VMAP.addEntity(S.doc,{className:a.className||'prop_static',model,position:p}));o.type='prop';o.model=model;S.objects.push(o);S.selectedId=o.id;render();S.viewport?.setObjects(S.objects,o.id);dirty(`Added prop ${a.name}`);}
+function duplicate(){const o=current();if(!o?.dmxId)return;history();const c=edit(VMAP.duplicateObject(S.doc,o));if(!c)return;Object.assign(c,{name:`${o.name}_copy`,blockPlayers:o.blockPlayers,blockGrenades:o.blockGrenades,blockBullets:o.blockBullets});S.objects.push(c);S.selectedId=c.id;render();S.viewport?.setObjects(S.objects,c.id);dirty(`Duplicated ${o.name}`);}
+function del(){const o=current();if(!o?.dmxId)return;history();if(!VMAP.removeObject(S.doc,o))return;S.objects=S.objects.filter(x=>x.id!==o.id);S.selectedId=S.objects.find(x=>x.type!=='world')?.id||'world';render();S.viewport?.setObjects(S.objects,S.selectedId);dirty(`Deleted ${o.name}`);}
+function bottom(){document.querySelectorAll('[data-bottom-tab]').forEach(b=>b.classList.toggle('active',b.dataset.bottomTab===S.bottomTab));const r=$('bottomContent');if(S.bottomTab==='console'){r.innerHTML=S.logs.length?S.logs.map(x=>`<div class="console-line"><span class="console-time">[${esc(x.t)}]</span><span class="console-${esc(x.k)}">${esc(x.m)}</span></div>`).join(''):'<div class="collab-state">Console ready.</div>';r.scrollTop=r.scrollHeight;}else if(S.bottomTab==='build')r.innerHTML='<div class="collab-state">The editor writes .vmap source. Compile the map with the real CS2 Hammer / ResourceCompiler.</div>';else if(S.bottomTab==='collaborators')r.innerHTML='<div class="collab-card"><div class="collab-avatar">1</div><div><strong>Single-user editor</strong><div class="collab-state">Multiplayer is Phase 4.</div></div></div>';else r.innerHTML=S.project?`<div class="project-info"><div><strong>Source</strong><br>${esc(S.project.vmapPath)}</div><div><strong>Objects</strong><br>${S.objects.filter(o=>o.dmxId).length}</div><div><strong>State</strong><br>${S.dirty?'Unsaved changes':'Saved'}</div></div>`:'';}
+function viewportControls(){$('viewport').classList.toggle('grid-enabled',S.grid);$('perspectiveButton').childNodes[0].nodeValue=`${S.view} `;$('shadingButton').childNodes[0].nodeValue=`${S.shading} `;$('snapButton').classList.toggle('active',S.snap);$('snapButton').textContent=`Snap: ${S.snap?'On':'Off'}`;$('gridSize').value=String(S.gridSize);$('angleSnap').value=`${S.angleSnap}°`;viewportSettings();}
+function setTool(t){if(t==='add-part')return addPart();if(['vertex','edge','face','extrude','clip','texture','light','entity'].includes(t)){S.tool=t;tools();S.viewport?.setTool('select');toast(t==='face'?'Select faces in Face Materials':t==='texture'?'Choose a material for selected faces':t==='entity'||t==='light'?'Double-click an Asset Browser entity':`${cap(t)} editing is limited in this Phase 3 build`);return;}S.tool=t;tools();S.viewport?.setTool(t);}
+function closeMenus(){document.querySelectorAll('.dropdown-menu').forEach(x=>x.classList.add('hidden'));document.querySelectorAll('.menu-button').forEach(x=>x.classList.remove('active'));}
+function menu(a){closeMenus();if(a==='new-project')newModal();else if(a==='open-vmap')openMap();else if(a==='save')save();else if(a==='reveal')api.revealProject(S.project?.projectFolder);else if(a==='return-home')exitMap();else if(a==='undo')undo();else if(a==='redo')redo();else if(a==='duplicate')duplicate();else if(a==='delete')del();else if(a==='toggle-grid'){S.grid=!S.grid;viewportControls();}else if(a==='toggle-left')$('leftPanel').classList.toggle('panel-hidden');else if(a==='toggle-right')$('rightPanel').classList.toggle('panel-hidden');else if(a==='toggle-bottom')$('bottomPanel').classList.toggle('panel-hidden');else if(a==='reset-layout')document.querySelectorAll('#leftPanel,#rightPanel,#bottomPanel').forEach(x=>x.classList.remove('panel-hidden'));else if(a==='build-placeholder')toast('Save the VMAP, then compile it in real CS2 Hammer');else if(a==='phase-info')toast('Phase 3: single-user VMAP editor');}
 
-function log(message, kind = 'info') {
-  state.logs.push({ time: new Date().toLocaleTimeString(), message, kind });
-  if (state.logs.length > 100) state.logs.shift();
-  if (state.bottomTab === 'console') renderBottom();
-}
+function bind(){$('openVmapButton').onclick=openMap;$('createProjectButton').onclick=newModal;$('continueButton').onclick=continueMap;$('forgetSessionButton').onclick=async()=>{await api.clearLastSession();home();};$('cancelCreateButton').onclick=()=>$('newProjectModal').classList.add('hidden');$('confirmCreateButton').onclick=newProject;$('newProjectName').onkeydown=e=>e.key==='Enter'&&newProject();$('toolbarNew').onclick=newModal;$('toolbarOpen').onclick=openMap;$('toolbarSave').onclick=save;$('toolbarSaveAll').onclick=save;$('toolbarDuplicate').onclick=duplicate;$('toolbarUndo').onclick=undo;$('toolbarRedo').onclick=redo;$('topAddPart').onclick=addPart;document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>setTool(b.dataset.tool));$('assetTabs').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{S.assetTab=b.dataset.tab;assets();});$('assetSearch').oninput=assets;$('sceneSearch').oninput=tree;$('assetSizeSlider').oninput=e=>document.documentElement.style.setProperty('--asset-size',`${e.target.value}px`);document.querySelectorAll('[data-bottom-tab]').forEach(b=>b.onclick=()=>{S.bottomTab=b.dataset.bottomTab;bottom();});document.querySelectorAll('.menu-button').forEach(b=>b.onclick=e=>{e.stopPropagation();const m=$(b.dataset.menu),hidden=m.classList.contains('hidden');closeMenus();if(!hidden)return;const r=b.getBoundingClientRect();m.style.left=`${r.left}px`;m.style.top=`${r.bottom+2}px`;m.classList.remove('hidden');b.classList.add('active');});document.querySelectorAll('.dropdown-menu [data-action]').forEach(b=>b.onclick=()=>menu(b.dataset.action));document.addEventListener('click',e=>{if(!e.target.closest('.dropdown-menu')&&!e.target.closest('.menu-button'))closeMenus();});$('spaceModeButton').onclick=()=>{S.space=S.space==='Local'?'World':'Local';$('spaceModeButton').innerHTML=`${S.space} <span>⌄</span>`;S.viewport?.setSpace(S.space);};$('perspectiveButton').onclick=()=>{const a=['Perspective','Top','Front','Side'];S.view=a[(a.indexOf(S.view)+1)%a.length];S.viewport?.setView(S.view);viewportControls();};$('shadingButton').onclick=()=>{S.shading=S.shading==='Lit'?'Wireframe':'Lit';viewportControls();};$('gridButton').onclick=()=>{S.grid=!S.grid;viewportControls();};$('gridSize').onchange=e=>{S.gridSize=Number(e.target.value)||64;viewportControls();};$('snapButton').onclick=()=>{S.snap=!S.snap;viewportControls();};$('angleSnap').onchange=e=>{S.angleSnap=Number(String(e.target.value).replace('°',''))||15;viewportControls();};$('exportButton').onclick=save;$('hammerButton').onclick=()=>toast('Save, then open/compile this VMAP in real CS2 Hammer');document.querySelectorAll('.view-option').forEach(b=>b.onclick=()=>b.classList.toggle('active'));window.addEventListener('keydown',e=>{const input=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();save();}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='y'){e.preventDefault();redo();}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='d'){e.preventDefault();duplicate();}else if(!input&&e.key==='Delete')del();else if(!input&&['1','2','3','4'].includes(e.key))setTool({'1':'select','2':'move','3':'rotate','4':'scale'}[e.key]);});window.addEventListener('beforeunload',()=>S.project&&autosave());window.addEventListener('eph3d-ready',e=>{S.viewport=e.detail;connectViewport();if(S.project){S.viewport.setObjects(S.objects,S.selectedId);S.camera?S.viewport.setCameraState(S.camera):S.viewport.frameAll();}});}
 
-function snapshot() {
-  return {
-    tool: state.tool,
-    assetTab: state.assetTab,
-    bottomTab: state.bottomTab,
-    selectedId: state.selectedId,
-    grid: state.grid,
-    snap: state.snap,
-    space: state.space,
-    view: state.view,
-    shading: state.shading,
-    objects: state.objects
-  };
-}
-
-function restore(ui) {
-  if (!ui) return;
-  for (const key of ['tool', 'assetTab', 'bottomTab', 'selectedId', 'grid', 'snap', 'space', 'view', 'shading']) {
-    if (ui[key] !== undefined) state[key] = ui[key];
-  }
-  if (Array.isArray(ui.objects) && ui.objects.length) state.objects = ui.objects;
-}
-
-async function autosave(show = false) {
-  if (!state.project) return;
-  const result = await api.autosave({ project: state.project, uiState: snapshot() });
-  if (result?.ok) $('autosaveStatus').textContent = `Autosaved ${new Date(result.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-  if (show) toast('Autosaved');
-}
-
-async function showStartup() {
-  const data = await api.getStartupState();
-  $('editorScreen').classList.add('hidden');
-  $('startupScreen').classList.remove('hidden');
-  const last = data?.lastSession?.project;
-  $('resumePanel').classList.toggle('hidden', !last);
-  $('forgetSessionButton').classList.toggle('hidden', !last);
-  if (last) {
-    $('resumeName').textContent = last.name || 'Untitled';
-    $('resumePath').textContent = last.vmapPath || '';
-  }
-}
-
-function enterEditor(project, ui) {
-  state.project = project;
-  restore(ui);
-  $('startupScreen').classList.add('hidden');
-  $('editorScreen').classList.remove('hidden');
-  $('projectTitle').textContent = `${project.name}.vmap`;
-  $('mapStatus').textContent = `Map: ${project.name}.vmap`;
-  renderAll();
-  autosave();
-}
-
-async function openVmap() {
-  const project = await api.openVmap();
-  if (project) {
-    enterEditor(project, null);
-    log(`Opened ${project.vmapPath}`, 'success');
-  }
-}
-
-async function continueLast() {
-  const result = await api.continueLast();
-  if (result?.project) {
-    enterEditor(result.project, result.uiState);
-    log(`Continued ${result.project.name}`, 'success');
-  }
-}
-
-function openNewModal() {
-  $('newProjectName').value = '';
-  $('newProjectModal').classList.remove('hidden');
-  setTimeout(() => $('newProjectName').focus(), 20);
-}
-
-async function createProject() {
-  const name = $('newProjectName').value.trim();
-  if (!name) return toast('Enter a project name');
-  const project = await api.createProject(name);
-  if (!project) return;
-  $('newProjectModal').classList.add('hidden');
-  enterEditor(project, null);
-  log(`Created ${project.name}`, 'success');
-}
-
-async function exitMap() {
-  if (!state.project) return;
-  await autosave();
-  await api.returnHome({ project: state.project, uiState: snapshot() });
-  state.project = null;
-  await showStartup();
-}
-
-function renderAll() {
-  renderAssets();
-  renderTools();
-  renderTree();
-  renderProperties();
-  renderBottom();
-  renderViewport();
-}
-
-function renderAssets() {
-  document.querySelectorAll('#assetTabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.assetTab));
-  const query = $('assetSearch').value.trim().toLowerCase();
-  const list = (assets[state.assetTab] || []).filter((n) => n.toLowerCase().includes(query));
-  $('assetGrid').innerHTML = list.map((name) => `<button class="asset-card"><div class="asset-thumb">${state.assetTab.slice(0, -1).toUpperCase()}</div><div class="asset-name">${esc(name)}</div></button>`).join('');
-  $('assetCount').textContent = `${list.length} items`;
-  $('assetGrid').querySelectorAll('.asset-card').forEach((card, i) => card.addEventListener('click', () => {
-    $('assetGrid').querySelectorAll('.asset-card').forEach((x) => x.classList.remove('selected'));
-    card.classList.add('selected');
-    log(`Selected asset ${list[i]}`);
-  }));
-}
-
-function renderTools() {
-  document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === state.tool));
-}
-
-function childrenOf(parent) {
-  return state.objects.filter((o) => o.parent === parent);
-}
-
-function renderTree() {
-  const root = $('sceneTree');
-  root.innerHTML = '';
-  const search = $('sceneSearch').value.trim().toLowerCase();
-
-  function addRow(obj, depth) {
-    const kids = childrenOf(obj.id);
-    if (search && !obj.name.toLowerCase().includes(search) && !kids.some((k) => k.name.toLowerCase().includes(search))) return;
-    const row = document.createElement('div');
-    row.className = `tree-row${obj.id === state.selectedId ? ' selected' : ''}`;
-    const icon = obj.type === 'world' ? 'hierarchy_world.png' : obj.type === 'folder' ? (obj.expanded ? 'hierarchy_folder_open.png' : 'hierarchy_folder_closed.png') : 'hierarchy_part.png';
-    const chev = kids.length ? (obj.expanded ? 'hierarchy_chevron_down.png' : 'hierarchy_chevron_right.png') : null;
-    row.innerHTML = `<span class="tree-indent" style="width:${depth * 14}px"></span>${chev ? `<img class="tree-chevron" src="../assets/icons/hierarchy/${chev}">` : '<span class="tree-chevron"></span>'}<img class="tree-icon" src="../assets/icons/hierarchy/${icon}"><span class="tree-name">${esc(obj.name)}</span><span class="tree-meta">◉</span>`;
-    root.appendChild(row);
-    hydrateIcons();
-    row.addEventListener('click', (e) => {
-      if (kids.length && e.target.classList.contains('tree-chevron')) obj.expanded = !obj.expanded;
-      else state.selectedId = obj.id;
-      renderTree();
-      renderProperties();
-      autosave();
-    });
-    if (obj.expanded) kids.forEach((kid) => addRow(kid, depth + 1));
-  }
-
-  state.objects.filter((o) => o.parent === null).forEach((o) => addRow(o, 0));
-}
-
-function editable(obj) {
-  if (!obj || ['world', 'folder'].includes(obj.type)) return obj;
-  obj.position ??= [0, 0, 0];
-  obj.rotation ??= [0, 0, 0];
-  obj.scale ??= [1, 1, 1];
-  obj.size ??= [64, 64, 64];
-  obj.collision ??= true;
-  obj.blockPlayers ??= true;
-  obj.blockGrenades ??= false;
-  obj.blockBullets ??= false;
-  obj.materials ??= { top: 'ERROR', bottom: 'ERROR', left: 'ERROR', right: 'ERROR', front: 'ERROR', back: 'ERROR' };
-  return obj;
-}
-
-function xyz(label, key, values) {
-  return `<div class="xyz-row"><label>${label}</label>${values.map((v, i) => `<input class="prop-input prop-value" data-key="${key}" data-i="${i}" type="number" step="0.1" value="${v}">`).join('')}</div>`;
-}
-
-function toggle(label, key, value) {
-  return `<div class="toggle-row"><span>${label}</span><button class="toggle ${value ? 'on' : ''}" data-toggle="${key}"></button></div>`;
-}
-
-function renderProperties() {
-  const obj = editable(current());
-  if (!obj) return $('propertiesContent').innerHTML = '<div class="collab-state">Nothing selected.</div>';
-  if (['world', 'folder'].includes(obj.type)) {
-    $('propertiesContent').innerHTML = `<div class="property-name-row"><input id="objectName" class="prop-input" value="${esc(obj.name)}"></div><div class="property-section"><div class="property-section-title">Group</div><div class="collab-state">Hierarchy container</div></div>`;
-    bindName(obj);
-    return;
-  }
-
-  const faces = ['top', 'bottom', 'left', 'right', 'front', 'back'];
-  $('propertiesContent').innerHTML = `
-    <div class="property-name-row"><input id="objectName" class="prop-input" value="${esc(obj.name)}"><select id="objectType" class="prop-select"><option ${obj.type === 'part' ? 'selected' : ''}>part</option><option ${obj.type === 'prop' ? 'selected' : ''}>prop</option><option ${obj.type === 'entity' ? 'selected' : ''}>entity</option></select></div>
-    <div class="property-section"><div class="property-section-title">Transform</div>${xyz('Position', 'position', obj.position)}${xyz('Rotation', 'rotation', obj.rotation)}${xyz('Scale', 'scale', obj.scale)}</div>
-    <div class="property-section"><div class="property-section-title">Size (World Units)</div><div class="field-row"><label>Width X</label><input class="prop-input prop-value" data-key="size" data-i="0" type="number" value="${obj.size[0]}"></div><div class="field-row"><label>Depth Y</label><input class="prop-input prop-value" data-key="size" data-i="1" type="number" value="${obj.size[1]}"></div><div class="field-row"><label>Height Z</label><input class="prop-input prop-value" data-key="size" data-i="2" type="number" value="${obj.size[2]}"></div></div>
-    <div class="property-section"><div class="property-section-title">Collision / Gameplay</div>${toggle('Colliding', 'collision', obj.collision)}${toggle("Players can't pass through", 'blockPlayers', obj.blockPlayers)}${toggle("Grenades can't pass through", 'blockGrenades', obj.blockGrenades)}${toggle("Bullets can't pass through", 'blockBullets', obj.blockBullets)}</div>
-    <div class="property-section"><div class="property-section-title">Face Materials</div><div class="face-selection">${faces.map((f) => `<button class="face-chip ${state.selectedFaces.has(f) ? 'active' : ''}" data-face="${f}">${cap(f)}</button>`).join('')}</div><div class="field-row"><label>Selected</label><div style="display:flex;gap:5px"><input id="selectedMaterial" class="prop-input" style="flex:1" value="ERROR"><button id="applyMaterial" class="mini-button" style="width:58px">Apply</button></div></div>${faces.map((f) => `<div class="face-row"><label>${cap(f)}</label><div class="material-preview" title="${esc(obj.materials[f])}"></div><button class="mini-button" data-face-menu="${f}">...</button></div>`).join('')}</div>`;
-
-  bindName(obj);
-  $('objectType').addEventListener('change', (e) => { obj.type = e.target.value; renderTree(); autosave(); });
-  document.querySelectorAll('.prop-value').forEach((input) => input.addEventListener('change', () => {
-    const value = Number(input.value);
-    if (Number.isFinite(value)) obj[input.dataset.key][Number(input.dataset.i)] = value;
-    autosave();
-  }));
-  document.querySelectorAll('[data-toggle]').forEach((button) => button.addEventListener('click', () => {
-    const key = button.dataset.toggle;
-    obj[key] = !obj[key];
-    button.classList.toggle('on', obj[key]);
-    autosave();
-  }));
-  document.querySelectorAll('[data-face]').forEach((button) => button.addEventListener('click', () => {
-    const face = button.dataset.face;
-    if (state.selectedFaces.has(face)) state.selectedFaces.delete(face); else state.selectedFaces.add(face);
-    if (!state.selectedFaces.size) state.selectedFaces.add(face);
-    renderProperties();
-  }));
-  $('applyMaterial').addEventListener('click', () => {
-    const mat = $('selectedMaterial').value.trim() || 'ERROR';
-    state.selectedFaces.forEach((f) => obj.materials[f] = mat);
-    log(`Applied ${mat} to ${[...state.selectedFaces].join(', ')}`, 'success');
-    autosave();
-  });
-  document.querySelectorAll('[data-face-menu]').forEach((button) => button.addEventListener('click', () => {
-    state.selectedFaces = new Set([button.dataset.faceMenu]);
-    $('selectedMaterial').value = obj.materials[button.dataset.faceMenu] || 'ERROR';
-    renderProperties();
-  }));
-}
-
-function bindName(obj) {
-  $('objectName')?.addEventListener('change', (e) => {
-    obj.name = e.target.value.trim() || obj.name;
-    renderTree();
-    autosave();
-  });
-}
-
-function renderBottom() {
-  document.querySelectorAll('[data-bottom-tab]').forEach((b) => b.classList.toggle('active', b.dataset.bottomTab === state.bottomTab));
-  const box = $('bottomContent');
-  if (state.bottomTab === 'console') box.innerHTML = state.logs.length ? state.logs.map((l) => `<div class="console-line"><span class="console-time">[${esc(l.time)}]</span><span class="console-${l.kind}">${esc(l.message)}</span></div>`).join('') : '<div class="console-line">Interface ready.</div>';
-  if (state.bottomTab === 'build') box.innerHTML = '<div class="console-line"><span class="console-warning">Build pipeline is disabled during Phase 2.</span></div>';
-  if (state.bottomTab === 'collaborators') box.innerHTML = '<div class="collab-card"><div class="collab-avatar">W</div><div><strong>You</strong><div class="collab-state">Offline editor · Multiplayer arrives in Phase 4</div></div></div>';
-  if (state.bottomTab === 'project') box.innerHTML = state.project ? `<div class="console-line">${esc(state.project.projectFolder || '')}</div><div class="console-line">${esc(state.project.vmapPath || '')}</div>` : '';
-}
-
-function renderViewport() {
-  $('viewport').classList.toggle('grid-enabled', state.grid);
-  $('spaceModeButton').innerHTML = `${state.space} <span>⌄</span>`;
-  $('perspectiveButton').innerHTML = `${state.view} <span>⌄</span>`;
-  $('shadingButton').innerHTML = `${state.shading} <span>⌄</span>`;
-  $('snapButton').classList.toggle('active', state.snap);
-  $('snapButton').textContent = `Snap: ${state.snap ? 'On' : 'Off'}`;
-}
-
-function addPart() {
-  const n = state.objects.filter((o) => o.type === 'part' && o.name.startsWith('Part_Blockout_')).length + 1;
-  const obj = { id: `part-${Date.now()}`, name: `Part_Blockout_${String(n).padStart(2, '0')}`, type: 'part', parent: 'arena', position: [0, 0, 64], rotation: [0, 0, 0], scale: [1, 1, 1], size: [128, 32, 128], collision: true, blockPlayers: true, blockGrenades: false, blockBullets: false, materials: { top: 'ERROR', bottom: 'ERROR', left: 'ERROR', right: 'ERROR', front: 'ERROR', back: 'ERROR' } };
-  state.objects.push(obj);
-  state.selectedId = obj.id;
-  state.tool = 'select';
-  state.objects.find((o) => o.id === 'arena').expanded = true;
-  renderTools();
-  renderTree();
-  renderProperties();
-  log(`Created ${obj.name} with ERROR material`, 'success');
-  toast('Part added');
-  autosave();
-}
-
-function duplicateSelected() {
-  const obj = current();
-  if (!obj || ['world', 'folder'].includes(obj.type)) return toast('Select a part or prop first');
-  const copy = JSON.parse(JSON.stringify(obj));
-  copy.id = `${obj.type}-${Date.now()}`;
-  copy.name += '_copy';
-  copy.position ??= [0, 0, 0];
-  copy.position[0] += 32;
-  state.objects.push(copy);
-  state.selectedId = copy.id;
-  renderTree(); renderProperties(); autosave();
-}
-
-function deleteSelected() {
-  const obj = current();
-  if (!obj || ['world', 'folder'].includes(obj.type)) return;
-  state.objects = state.objects.filter((o) => o.id !== obj.id);
-  state.selectedId = 'world';
-  renderTree(); renderProperties(); autosave();
-}
-
-function closeMenus() {
-  document.querySelectorAll('.dropdown-menu').forEach((m) => m.classList.add('hidden'));
-  document.querySelectorAll('.menu-button').forEach((b) => b.classList.remove('active'));
-}
-
-async function action(name) {
-  closeMenus();
-  if (name === 'new-project') openNewModal();
-  if (name === 'open-vmap') await openVmap();
-  if (name === 'save') await autosave(true);
-  if (name === 'reveal' && state.project) await api.revealProject(state.project.projectFolder);
-  if (name === 'return-home') await exitMap();
-  if (name === 'duplicate') duplicateSelected();
-  if (name === 'delete') deleteSelected();
-  if (name === 'toggle-grid') { state.grid = !state.grid; renderViewport(); autosave(); }
-  if (name === 'toggle-left') document.body.classList.toggle('left-hidden');
-  if (name === 'toggle-right') document.body.classList.toggle('right-hidden');
-  if (name === 'toggle-bottom') document.body.classList.toggle('bottom-hidden');
-  if (name === 'reset-layout') document.body.classList.remove('left-hidden', 'right-hidden', 'bottom-hidden');
-  if (name === 'undo' || name === 'redo') toast(`${cap(name)} history connects in Phase 3`);
-  if (name === 'build-placeholder') toast('Compilation connects to Hammer later');
-  if (name === 'phase-info') toast('Phase 2: interface and project flow');
-}
-
-function bind() {
-  $('openVmapButton').addEventListener('click', openVmap);
-  $('createProjectButton').addEventListener('click', openNewModal);
-  $('continueButton').addEventListener('click', continueLast);
-  $('forgetSessionButton').addEventListener('click', async () => { await api.clearLastSession(); await showStartup(); });
-  $('cancelCreateButton').addEventListener('click', () => $('newProjectModal').classList.add('hidden'));
-  $('confirmCreateButton').addEventListener('click', createProject);
-  $('newProjectName').addEventListener('keydown', (e) => { if (e.key === 'Enter') createProject(); });
-  $('toolbarNew').addEventListener('click', openNewModal);
-  $('toolbarOpen').addEventListener('click', openVmap);
-  $('toolbarSave').addEventListener('click', () => autosave(true));
-  $('toolbarSaveAll').addEventListener('click', () => autosave(true));
-  $('toolbarDuplicate').addEventListener('click', duplicateSelected);
-  $('toolbarUndo').addEventListener('click', () => toast('Undo history connects in Phase 3'));
-  $('toolbarRedo').addEventListener('click', () => toast('Redo history connects in Phase 3'));
-  $('topAddPart').addEventListener('click', addPart);
-
-  document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => {
-    if (b.dataset.tool === 'add-part') return addPart();
-    state.tool = b.dataset.tool;
-    renderTools();
-    autosave();
-  }));
-  document.querySelectorAll('#assetTabs button').forEach((b) => b.addEventListener('click', () => { state.assetTab = b.dataset.tab; renderAssets(); autosave(); }));
-  $('assetSearch').addEventListener('input', renderAssets);
-  $('sceneSearch').addEventListener('input', renderTree);
-  document.querySelectorAll('[data-bottom-tab]').forEach((b) => b.addEventListener('click', () => { state.bottomTab = b.dataset.bottomTab; renderBottom(); autosave(); }));
-
-  document.querySelectorAll('.menu-button').forEach((b) => b.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const menu = $(b.dataset.menu);
-    const wasOpen = !menu.classList.contains('hidden');
-    closeMenus();
-    if (!wasOpen) {
-      const r = b.getBoundingClientRect();
-      menu.style.left = `${r.left}px`;
-      menu.style.top = `${r.bottom + 2}px`;
-      menu.classList.remove('hidden');
-      b.classList.add('active');
-    }
-  }));
-  document.querySelectorAll('[data-action]').forEach((b) => b.addEventListener('click', () => action(b.dataset.action)));
-  document.addEventListener('mousedown', (e) => { if (!e.target.closest('.dropdown-menu') && !e.target.closest('.menu-button')) closeMenus(); });
-
-  $('spaceModeButton').addEventListener('click', () => { state.space = state.space === 'Local' ? 'World' : 'Local'; renderViewport(); autosave(); });
-  $('perspectiveButton').addEventListener('click', () => { const a = ['Perspective', 'Top', 'Front', 'Right']; state.view = a[(a.indexOf(state.view) + 1) % a.length]; renderViewport(); });
-  $('shadingButton').addEventListener('click', () => { const a = ['Lit', 'Unlit', 'Wireframe']; state.shading = a[(a.indexOf(state.shading) + 1) % a.length]; renderViewport(); });
-  $('gridButton').addEventListener('click', () => { state.grid = !state.grid; renderViewport(); autosave(); });
-  $('snapButton').addEventListener('click', () => { state.snap = !state.snap; renderViewport(); autosave(); });
-  $('exportButton').addEventListener('click', () => toast('VMAP export connects in Phase 3'));
-  $('hammerButton').addEventListener('click', () => toast('Hammer launch connects in Phase 3'));
-
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); autosave(true); }
-    if (e.key === 'Delete' && document.activeElement?.tagName !== 'INPUT') deleteSelected();
-    if (e.key === 'Escape') { closeMenus(); $('newProjectModal').classList.add('hidden'); }
-  });
-  setInterval(() => { if (state.project && !$('editorScreen').classList.contains('hidden')) autosave(); }, 12000);
-}
-
-async function boot() {
-  hydrateIcons();
-  bind();
-  log('EasyPeasyHammer interface initialized', 'success');
-  await showStartup();
-}
-
-boot();
+async function init(){icons();bind();connectViewport();await home();log('Phase 3 editor ready','success');setInterval(()=>{if(S.project&&Date.now()-S.lastAutosave>15000)autosave();},5000);}
+init();
