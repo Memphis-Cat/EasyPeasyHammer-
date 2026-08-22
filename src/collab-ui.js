@@ -71,6 +71,7 @@
 
   window.EPH_COLLAB_RENDER = renderCollaborators;
   window.EPH_COLLAB_NOTIFY = async () => {
+    if (!document.hasFocus()) return;
     try { if (await api.isCollaboratorChatFocused?.()) return; } catch {}
     if (window.EPH_BELL1) new Audio(window.EPH_BELL1).play().catch(() => {});
   };
