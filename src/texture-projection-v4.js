@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 
 const VMAP = window.EPH_VMAP;
+const TILE_WORLD_UNITS = 32;
+const UV_PER_WORLD_UNIT = 1 / TILE_WORLD_UNITS;
 const DEFAULT_SCALE = [0.25, 0.25];
 const DEFAULT_SIZE = [512, 512];
 
@@ -25,6 +27,18 @@ function defaultAxes(vertices, face) {
   return { u: [1, 0, 0, 0], v: [0, 0, -1, 0] };
 }
 
+function isGeneratedPart(object) {
+  if (!object || object.type !== 'part') return false;
+  if (object.ephProjectionMode === 'tile32') return true;
+  return /^Part_\d+$/i.test(String(object.name || ''));
+}
+
+function markGeneratedPart(object) {
+  if (!object || object.type !== 'part') return object;
+  object.ephProjectionMode = 'tile32';
+  return object;
+}
+
 function projectFace(object, faceIndex, width = null, height = null) {
   const face = object?.faces?.[faceIndex];
   if (!face?.length) return [];
@@ -36,33 +50,35 @@ function projectFace(object, faceIndex, width = null, height = null) {
   object.faceTextureSizes ??= [];
 
   const fallbackAxes = defaultAxes(object.vertices, face);
-  const scale = numbers(object.faceTextureScale[faceIndex] || DEFAULT_SCALE, 2, 0.25);
   const axisU = numbers(object.faceTextureAxisU[faceIndex] || fallbackAxes.u, 4, 0);
   const axisV = numbers(object.faceTextureAxisV[faceIndex] || fallbackAxes.v, 4, 0);
   const storedSize = numbers(object.faceTextureSizes[faceIndex] || DEFAULT_SIZE, 2, 512);
   const textureWidth = Math.max(1, Number(width) || storedSize[0] || 512);
   const textureHeight = Math.max(1, Number(height) || storedSize[1] || 512);
-  const scaleU = Math.abs(scale[0]) > 1e-8 ? Math.abs(scale[0]) : 0.25;
-  const scaleV = Math.abs(scale[1]) > 1e-8 ? Math.abs(scale[1]) : 0.25;
 
-  object.faceTextureScale[faceIndex] = scale;
+  object.faceTextureScale[faceIndex] = [...DEFAULT_SCALE];
   object.faceTextureAxisU[faceIndex] = axisU;
   object.faceTextureAxisV[faceIndex] = axisV;
   object.faceTextureSizes[faceIndex] = [textureWidth, textureHeight];
 
+  const shiftU = Number(axisU[3]) || 0;
+  const shiftV = Number(axisV[3]) || 0;
   const uv = face.map(vertexIndex => {
     const point = object.vertices?.[vertexIndex] || [0, 0, 0];
-    const uTexels = dot3(point, axisU) / scaleU + (Number(axisU[3]) || 0);
-    const vTexels = dot3(point, axisV) / scaleV + (Number(axisV[3]) || 0);
-    return [uTexels / textureWidth, vTexels / textureHeight];
+    return [
+      dot3(point, axisU) * UV_PER_WORLD_UNIT + shiftU,
+      dot3(point, axisV) * UV_PER_WORLD_UNIT + shiftV,
+    ];
   });
 
   object.faceUVs[faceIndex] = uv;
   return uv;
 }
 
-function projectObject(object, faceIndices = null) {
+function projectObject(object, faceIndices = null, force = false) {
   if (!object || object.type !== 'part' || !object.faces?.length) return object;
+  if (!force && !isGeneratedPart(object)) return object;
+
   const indices = faceIndices || object.faces.map((_, index) => index);
   for (const faceIndex of indices) {
     if (!object.faces[faceIndex]) continue;
@@ -80,6 +96,7 @@ function setFaceMaterialInfo(object, faceIndices, width, height) {
   object.faceTextureAxisV ??= [];
   object.faceTextureSizes ??= [];
 
+  if (isGeneratedPart(object)) markGeneratedPart(object);
   for (const faceIndex of faceIndices || []) {
     const face = object.faces?.[faceIndex];
     if (!face) continue;
@@ -88,7 +105,7 @@ function setFaceMaterialInfo(object, faceIndices, width, height) {
     object.faceTextureAxisU[faceIndex] = axes.u;
     object.faceTextureAxisV[faceIndex] = axes.v;
     object.faceTextureSizes[faceIndex] = [Math.max(1, Number(width) || 512), Math.max(1, Number(height) || 512)];
-    projectFace(object, faceIndex, width, height);
+    if (isGeneratedPart(object)) projectFace(object, faceIndex, width, height);
   }
   return object;
 }
@@ -97,31 +114,35 @@ if (VMAP && !VMAP.__ephTextureProjectionV4) {
   VMAP.__ephTextureProjectionV4 = true;
 
   const previousAddPart = VMAP.addPart.bind(VMAP);
-  VMAP.addPart = (doc, options = {}) => projectObject(previousAddPart(doc, options));
+  VMAP.addPart = (doc, options = {}) => {
+    const object = markGeneratedPart(previousAddPart(doc, options));
+    projectObject(object, null, true);
+    return object;
+  };
 
   const previousApply = VMAP.applyObjectToDocument.bind(VMAP);
   VMAP.applyObjectToDocument = (doc, object) => {
-    if (object?.type === 'part') projectObject(object);
+    if (isGeneratedPart(object)) projectObject(object);
     return previousApply(doc, object);
   };
 
   const previousPrepare = VMAP.prepareForSave.bind(VMAP);
   VMAP.prepareForSave = (doc, objects) => {
-    for (const object of objects || []) if (object?.type === 'part') projectObject(object);
+    for (const object of objects || []) if (isGeneratedPart(object)) projectObject(object);
     return previousPrepare(doc, objects);
   };
 
   const previousExtrude = VMAP.extrudeFace.bind(VMAP);
   VMAP.extrudeFace = (object, faceIndex, distance) => {
     const result = previousExtrude(object, faceIndex, distance);
-    if (result) projectObject(object);
+    if (result && isGeneratedPart(object)) projectObject(object);
     return result;
   };
 
   const previousClip = VMAP.clipAxis.bind(VMAP);
   VMAP.clipAxis = (object, axis, plane, keepPositive) => {
     const result = previousClip(object, axis, plane, keepPositive);
-    if (result) projectObject(object);
+    if (result && isGeneratedPart(object)) projectObject(object);
     return result;
   };
 }
@@ -138,7 +159,7 @@ function installViewport(viewport) {
 
   const previousCreatePartVisual = viewport.createPartVisual.bind(viewport);
   viewport.createPartVisual = function(object) {
-    projectObject(object);
+    if (isGeneratedPart(object)) projectObject(object);
     return previousCreatePartVisual(object);
   };
 
@@ -155,17 +176,24 @@ function installViewport(viewport) {
   };
 
   if (viewport.objects?.length) {
-    for (const object of viewport.objects) if (object?.type === 'part') projectObject(object);
+    for (const object of viewport.objects) {
+      if (/^Part_\d+$/i.test(String(object?.name || ''))) markGeneratedPart(object);
+      if (isGeneratedPart(object)) projectObject(object);
+    }
     viewport.setObjects(viewport.objects, viewport.selectedId);
   }
 }
 
 window.EPH_TEXTURE_PROJECTION_V4 = {
   defaultAxes,
+  isGeneratedPart,
+  markGeneratedPart,
   projectFace,
   projectObject,
   setFaceMaterialInfo,
   defaultScale: DEFAULT_SCALE,
+  tileWorldUnits: TILE_WORLD_UNITS,
+  uvPerWorldUnit: UV_PER_WORLD_UNIT,
 };
 
 if (window.EPH3D) installViewport(window.EPH3D);
