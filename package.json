@@ -14,13 +14,13 @@
     "build:portable": "node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
-    "three": "^0.185.1",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "electron": "43.4.0",
     "electron-builder": "26.0.11",
-    "esbuild": "0.25.9"
+    "esbuild": "0.25.9",
+    "three": "^0.185.1"
   },
   "build": {
     "appId": "com.memphiscat.easypeasyhammer",
