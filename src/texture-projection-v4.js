@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 
 const VMAP = window.EPH_VMAP;
-const TILE_WORLD_UNITS = 32;
+const TILE_WORLD_UNITS = 16;
 const UV_PER_WORLD_UNIT = 1 / TILE_WORLD_UNITS;
 const DEFAULT_SCALE = [0.25, 0.25];
 const DEFAULT_SIZE = [512, 512];
@@ -29,13 +29,13 @@ function defaultAxes(vertices, face) {
 
 function isGeneratedPart(object) {
   if (!object || object.type !== 'part') return false;
-  if (object.ephProjectionMode === 'tile32') return true;
+  if (object.ephProjectionMode === 'tile16') return true;
   return /^Part_\d+$/i.test(String(object.name || ''));
 }
 
 function markGeneratedPart(object) {
   if (!object || object.type !== 'part') return object;
-  object.ephProjectionMode = 'tile32';
+  object.ephProjectionMode = 'tile16';
   return object;
 }
 
@@ -159,7 +159,8 @@ function installViewport(viewport) {
 
   const previousCreatePartVisual = viewport.createPartVisual.bind(viewport);
   viewport.createPartVisual = function(object) {
-    if (isGeneratedPart(object)) projectObject(object);
+    if (/^Part_\d+$/i.test(String(object?.name || '')) && object.ephProjectionMode !== 'tile16') markGeneratedPart(object);
+    if (isGeneratedPart(object)) projectObject(object, null, true);
     return previousCreatePartVisual(object);
   };
 
@@ -178,7 +179,7 @@ function installViewport(viewport) {
   if (viewport.objects?.length) {
     for (const object of viewport.objects) {
       if (/^Part_\d+$/i.test(String(object?.name || ''))) markGeneratedPart(object);
-      if (isGeneratedPart(object)) projectObject(object);
+      if (isGeneratedPart(object)) projectObject(object, null, true);
     }
     viewport.setObjects(viewport.objects, viewport.selectedId);
   }
