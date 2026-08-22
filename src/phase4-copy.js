@@ -15,11 +15,6 @@
     if (status && /single-user|phase/i.test(status.title || '')) status.title = 'Collaboration available';
 
     document.querySelectorAll('.collab-phase-note').forEach(node => node.remove());
-    document.querySelectorAll('*').forEach(node => {
-      if (node.children.length) return;
-      const text = String(node.textContent || '');
-      if (/interface only|not active yet|will be enabled in Phase 4|will be connected in Phase 4|ready for Phase 4 upload/i.test(text)) node.textContent = '';
-    });
 
     let logsChanged = false;
     if (typeof S !== 'undefined' && Array.isArray(S.logs)) {
@@ -33,5 +28,5 @@
   clean();
   const observer = new MutationObserver(clean);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(() => observer.disconnect(), 15000);
+  setTimeout(() => observer.disconnect(), 8000);
 })();
