@@ -6,13 +6,39 @@
   let collabState = { role: null, connected: false, users: [], chatHistory: [] };
   let applyingRemote = false;
   let snapshotTimer = null;
-  let liveSnapshotTimer = null;
-  let lastLiveSnapshotAt = 0;
   let persistenceTimer = null;
+  let liveViewport = null;
+  let livePending = null;
+  let liveTimer = null;
+  let lastLiveSent = 0;
   let lastSelection = Symbol('initial');
   let lastCursorSent = 0;
   const remoteSelections = new Map();
   const remoteCursors = new Map();
+  const LIVE_INTERVAL_MS = 33;
+
+  const LIVE_KEYS = [
+    'id', 'type', 'name', 'position', 'rotation', 'scale', 'size', 'vertices', 'faces',
+    'faceMaterials', 'faceUVs', 'faceTextureScale', 'faceTextureAxisU', 'faceTextureAxisV',
+    'faceTextureSizes', 'materials', 'collision', 'blockPlayers', 'blockGrenades', 'blockBullets',
+    'visible', 'className', 'model', 'entityProperties', 'ephProjectionMode'
+  ];
+
+  const cloneValue = value => {
+    if (value === undefined) return undefined;
+    try { return structuredClone(value); }
+    catch {
+      try { return JSON.parse(JSON.stringify(value)); }
+      catch { return value; }
+    }
+  };
+
+  function livePayload(object) {
+    if (!object?.id) return null;
+    const out = {};
+    for (const key of LIVE_KEYS) if (object[key] !== undefined) out[key] = cloneValue(object[key]);
+    return out;
+  }
 
   function foldersForSnapshot() {
     const folders = (S.objects || []).filter(x => x.type === 'folder').map(x => ({ id: x.id, type: 'folder', name: x.name, parent: x.parent || 'world', expanded: x.expanded !== false, sourceClass: 'EPH_UI_FOLDER' }));
@@ -81,6 +107,26 @@
     }
   }
 
+  function applyLiveObject(packet) {
+    if (!packet?.object?.id || applyingRemote) return;
+    const object = S.objects.find(x => x.id === packet.object.id);
+    if (!object) return;
+    applyingRemote = true;
+    try {
+      for (const key of LIVE_KEYS) if (packet.object[key] !== undefined) object[key] = cloneValue(packet.object[key]);
+      ensureObject(object);
+      VMAP.applyObjectToDocument(S.doc, object);
+      S.viewport?.updateObject(object);
+      if (S.selectedId === object.id) renderProperties();
+      S.dirty = true;
+      updateTitle();
+    } catch (error) {
+      log(`Realtime collaboration update rejected: ${error.message}`, 'warning');
+    } finally {
+      applyingRemote = false;
+    }
+  }
+
   async function refreshState() {
     try { collabState = await api.collabState(); } catch {}
     window.EPH_COLLAB_RENDER?.();
@@ -92,41 +138,45 @@
     try { await api.collabSendSnapshot(makeSnapshot()); } catch {}
   }
 
-  function scheduleSnapshot(delay = 120) {
+  function scheduleSnapshot(delay = 90) {
     if (applyingRemote || !collabState.connected || !S.project || !S.doc) return;
     clearTimeout(snapshotTimer);
     snapshotTimer = setTimeout(sendSnapshotNow, Math.max(0, delay));
   }
 
-  function streamLiveSnapshot() {
-    if (applyingRemote || !collabState.connected || !S.project || !S.doc) return;
-    const frameMs = 33;
-    const now = performance.now();
-    const wait = Math.max(0, frameMs - (now - lastLiveSnapshotAt));
-    if (liveSnapshotTimer) return;
-    liveSnapshotTimer = setTimeout(async () => {
-      liveSnapshotTimer = null;
-      lastLiveSnapshotAt = performance.now();
-      await sendSnapshotNow();
-    }, wait);
+  function flushLiveObject() {
+    liveTimer = null;
+    if (applyingRemote || !collabState.connected || !livePending) return;
+    const payload = livePayload(livePending);
+    livePending = null;
+    if (!payload) return;
+    lastLiveSent = performance.now();
+    api.collabSendLiveObject(payload).catch?.(() => {});
   }
 
-  function installLiveViewportSync() {
+  function scheduleLiveObject(object, immediate = false) {
+    if (applyingRemote || !collabState.connected || !object?.id) return;
+    livePending = object;
+    if (immediate) {
+      clearTimeout(liveTimer);
+      liveTimer = null;
+      flushLiveObject();
+      return;
+    }
+    if (liveTimer) return;
+    const elapsed = performance.now() - lastLiveSent;
+    liveTimer = setTimeout(flushLiveObject, Math.max(0, LIVE_INTERVAL_MS - elapsed));
+  }
+
+  function installRealtimeViewport() {
     const viewport = S.viewport || window.EPH3D;
-    if (!viewport || viewport.__ephLiveCollabSync) return;
-    viewport.__ephLiveCollabSync = true;
-    const original = viewport.callbacks.change;
+    if (!viewport || liveViewport === viewport || viewport.__ephCollabRealtime) return;
+    liveViewport = viewport;
+    viewport.__ephCollabRealtime = true;
+    const originalChange = viewport.callbacks.change;
     viewport.callbacks.change = (object, commit) => {
-      original?.(object, commit);
-      if (applyingRemote || !collabState.connected) return;
-      if (commit) {
-        clearTimeout(liveSnapshotTimer);
-        liveSnapshotTimer = null;
-        lastLiveSnapshotAt = performance.now();
-        sendSnapshotNow();
-      } else {
-        streamLiveSnapshot();
-      }
+      originalChange?.(object, commit);
+      if (!applyingRemote && collabState.connected && object?.id) scheduleLiveObject(object, Boolean(commit));
     };
   }
 
@@ -150,6 +200,7 @@
     const result = await api.collabHost({ project: S.project, username: await profileName(), snapshot: makeSnapshot() });
     if (result?.ok) {
       collabState = result;
+      installRealtimeViewport();
       log('Collaboration session started', 'success');
       window.EPH_COLLAB_RENDER?.();
     }
@@ -170,6 +221,7 @@
     applyGrouping(result.snapshot || null);
     renderTree();
     S.viewport?.setObjects(S.objects, S.selectedId);
+    installRealtimeViewport();
     log(`Joined ${result.project.name}`, 'success');
     window.EPH_COLLAB_RENDER?.();
     await refreshSharedProjects();
@@ -263,6 +315,8 @@
     } else if (event.type === 'presence') {
       collabState.users = event.users || [];
       window.EPH_COLLAB_RENDER?.();
+    } else if (event.type === 'live-object' && event.peerId !== collabState.peerId) {
+      applyLiveObject(event);
     } else if (event.type === 'snapshot' && event.sourcePeer !== collabState.peerId) {
       applySnapshot(event.snapshot, event.revision);
     } else if (event.type === 'selection') {
@@ -288,7 +342,7 @@
   setInterval(() => {
     installStartupJoin();
     installCursorSharing();
-    installLiveViewportSync();
+    installRealtimeViewport();
     cleanVisiblePlaceholderText();
     if (collabState.connected && S.selectedId !== lastSelection) {
       lastSelection = S.selectedId;
