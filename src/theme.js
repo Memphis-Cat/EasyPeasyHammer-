@@ -46,6 +46,28 @@
     updateMax();
   }
 
+  function installInteractionFixes() {
+    window.addEventListener('keydown', event => {
+      const editable = event.target?.closest?.('input, textarea, [contenteditable="true"]');
+      if (!editable || !(event.ctrlKey || event.metaKey)) return;
+      if (['z', 'y', 'd'].includes(event.key.toLowerCase())) event.stopImmediatePropagation();
+    }, true);
+
+    const viewportButtons = [...document.querySelectorAll('.viewport-top-right .viewport-icon')];
+    if (viewportButtons[0]) {
+      viewportButtons[0].title = 'Frame all objects';
+      viewportButtons[0].onclick = () => S.viewport?.frameAll?.();
+    }
+    if (viewportButtons[1]) {
+      viewportButtons[1].title = 'Toggle grid';
+      viewportButtons[1].onclick = () => { S.grid = !S.grid; renderViewportControls(); };
+    }
+    if (viewportButtons[2]) {
+      viewportButtons[2].title = 'Toggle wireframe';
+      viewportButtons[2].onclick = () => { S.shading = S.shading === 'Lit' ? 'Wireframe' : 'Lit'; renderViewportControls(); };
+    }
+  }
+
   const previewCache = new Map();
   const previewPending = new Map();
   let thumbObserver = null;
@@ -153,6 +175,7 @@
     const list = S.assetItems || [];
     const grid = $('assetGrid');
     grid.innerHTML = list.map((x, i) => `<button class="asset-card" data-i="${i}" title="${esc(x.path || x.className || x.model || '')}"><div class="asset-thumb" data-thumb="${i}">${S.assetTab === 'materials' ? 'MAT' : S.assetTab === 'entities' ? 'ENT' : S.assetTab === 'props' ? 'PROP' : 'MDL'}</div><div class="asset-name">${esc(x.name)}</div></button>`).join('');
+    grid.scrollTop = 0;
     $('assetCount').textContent = `${list.length}${S.assetStatus?.available && ['materials', 'models', 'props'].includes(S.assetTab) ? ' shown' : ' items'}`;
 
     grid.querySelectorAll('.asset-card').forEach(card => {
@@ -177,4 +200,5 @@
   if (window.EPH3D) applyViewportTheme(window.EPH3D);
   setTimeout(() => applyViewportTheme(window.EPH3D), 250);
   installWindowChrome();
+  installInteractionFixes();
 })();
