@@ -6,6 +6,7 @@ const TILE_WORLD_UNITS = 16;
 const UV_PER_WORLD_UNIT = 1 / TILE_WORLD_UNITS;
 const DEFAULT_SCALE = [0.25, 0.25];
 const DEFAULT_SIZE = [512, 512];
+const DEG = 180 / Math.PI;
 
 const numbers = (value, length, fallback = 0) => {
   const source = Array.isArray(value) ? value : String(value ?? '').trim().split(/\s+/);
@@ -110,6 +111,33 @@ function setFaceMaterialInfo(object, faceIndices, width, height) {
   return object;
 }
 
+function hasNonUnitScale(scale) {
+  if (!Array.isArray(scale) || scale.length < 3) return false;
+  return scale.some(value => Math.abs((Number(value) || 1) - 1) > 1e-6);
+}
+
+function bakePartScale(object, scale = object?.scale) {
+  if (!object || object.type !== 'part' || !object.vertices?.length || !hasNonUnitScale(scale)) return false;
+
+  const sx = Number(scale?.[0]);
+  const sy = Number(scale?.[1]);
+  const sz = Number(scale?.[2]);
+  const safeX = Number.isFinite(sx) && Math.abs(sx) > 1e-8 ? sx : 1;
+  const safeY = Number.isFinite(sy) && Math.abs(sy) > 1e-8 ? sy : 1;
+  const safeZ = Number.isFinite(sz) && Math.abs(sz) > 1e-8 ? sz : 1;
+
+  object.vertices = object.vertices.map(vertex => [
+    (Number(vertex?.[0]) || 0) * safeX,
+    (Number(vertex?.[1]) || 0) * safeY,
+    (Number(vertex?.[2]) || 0) * safeZ,
+  ]);
+  object.scale = [1, 1, 1];
+  if (VMAP.geometryBounds) object.size = VMAP.geometryBounds(object.vertices).size;
+  markGeneratedPart(object);
+  projectObject(object, null, true);
+  return true;
+}
+
 if (VMAP && !VMAP.__ephTextureProjectionV4) {
   VMAP.__ephTextureProjectionV4 = true;
 
@@ -122,27 +150,34 @@ if (VMAP && !VMAP.__ephTextureProjectionV4) {
 
   const previousApply = VMAP.applyObjectToDocument.bind(VMAP);
   VMAP.applyObjectToDocument = (doc, object) => {
-    if (isGeneratedPart(object)) projectObject(object);
+    if (isGeneratedPart(object)) {
+      bakePartScale(object);
+      projectObject(object, null, true);
+    }
     return previousApply(doc, object);
   };
 
   const previousPrepare = VMAP.prepareForSave.bind(VMAP);
   VMAP.prepareForSave = (doc, objects) => {
-    for (const object of objects || []) if (isGeneratedPart(object)) projectObject(object);
+    for (const object of objects || []) {
+      if (!isGeneratedPart(object)) continue;
+      bakePartScale(object);
+      projectObject(object, null, true);
+    }
     return previousPrepare(doc, objects);
   };
 
   const previousExtrude = VMAP.extrudeFace.bind(VMAP);
   VMAP.extrudeFace = (object, faceIndex, distance) => {
     const result = previousExtrude(object, faceIndex, distance);
-    if (result && isGeneratedPart(object)) projectObject(object);
+    if (result && isGeneratedPart(object)) projectObject(object, null, true);
     return result;
   };
 
   const previousClip = VMAP.clipAxis.bind(VMAP);
   VMAP.clipAxis = (object, axis, plane, keepPositive) => {
     const result = previousClip(object, axis, plane, keepPositive);
-    if (result && isGeneratedPart(object)) projectObject(object);
+    if (result && isGeneratedPart(object)) projectObject(object, null, true);
     return result;
   };
 }
@@ -176,12 +211,35 @@ function installViewport(viewport) {
     return texture;
   };
 
+  const previousCommitObjectTransform = viewport.commitObjectTransform.bind(viewport);
+  viewport.commitObjectTransform = function() {
+    const object = this.getObjectById(this.selectedId);
+    const root = this.objectRoots.get(this.selectedId);
+    if (!object || !root || object.type !== 'part' || this.tool !== 'scale') return previousCommitObjectTransform();
+
+    object.position = [root.position.x, root.position.y, root.position.z];
+    object.rotation = [root.rotation.x * DEG, root.rotation.y * DEG, root.rotation.z * DEG];
+    const scale = [root.scale.x, root.scale.y, root.scale.z];
+    object.scale = scale;
+    bakePartScale(object, scale);
+    root.scale.set(1, 1, 1);
+    this.refreshSelectedPartVisual();
+    this.callbacks.change?.(object, true);
+    this.updateSelectionBox();
+  };
+
   if (viewport.objects?.length) {
+    let repaired = false;
     for (const object of viewport.objects) {
       if (/^Part_\d+$/i.test(String(object?.name || ''))) markGeneratedPart(object);
-      if (isGeneratedPart(object)) projectObject(object, null, true);
+      if (!isGeneratedPart(object)) continue;
+      repaired = bakePartScale(object) || repaired;
+      projectObject(object, null, true);
     }
     viewport.setObjects(viewport.objects, viewport.selectedId);
+    if (repaired) {
+      for (const object of viewport.objects) if (isGeneratedPart(object)) viewport.callbacks.change?.(object, true);
+    }
   }
 }
 
@@ -192,6 +250,7 @@ window.EPH_TEXTURE_PROJECTION_V4 = {
   projectFace,
   projectObject,
   setFaceMaterialInfo,
+  bakePartScale,
   defaultScale: DEFAULT_SCALE,
   tileWorldUnits: TILE_WORLD_UNITS,
   uvPerWorldUnit: UV_PER_WORLD_UNIT,
