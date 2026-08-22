@@ -146,7 +146,9 @@ function loadPass(src, marker, module = false) {
   try {
     await loadPass('interaction-pass.js', 'ephInteractionPass');
     await loadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
+    await loadPass('hammer-fidelity.js', 'ephHammerFidelity', true);
     await loadPass('default-part.js', 'ephDefaultPart');
+    await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
     await loadPass('advanced-ui.js', 'ephAdvancedUi');
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
