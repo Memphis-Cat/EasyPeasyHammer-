@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .runtime/
+Projects/
 backend/**/bin/
 backend/**/obj/
 *.log
