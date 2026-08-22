@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "main.js",
   "author": "Memphis-Cat",
@@ -14,7 +14,8 @@
     "build:installer": "electron-builder --win nsis"
   },
   "dependencies": {
-    "three": "^0.185.1"
+    "three": "^0.185.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "electron": "43.4.0",
@@ -30,6 +31,7 @@
       "preload.js",
       "asset-host.js",
       "app-services.js",
+      "collab-service.js",
       "src/**/*",
       "assets/**/*",
       "package.json"
