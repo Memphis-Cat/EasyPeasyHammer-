@@ -104,12 +104,8 @@
     createProject();
   });
 
-  form.addEventListener('keydown', event => {
-    event.stopPropagation();
-  });
-  form.addEventListener('keyup', event => {
-    event.stopPropagation();
-  });
+  form.addEventListener('keydown', event => event.stopPropagation());
+  form.addEventListener('keyup', event => event.stopPropagation());
 
   cancel.addEventListener('click', close);
   dialog.addEventListener('cancel', event => {
@@ -124,9 +120,23 @@
   if (fileNew) fileNew.onclick = open;
 })();
 
-if (!document.querySelector('script[data-eph-interaction-pass]')) {
-  const interactionPass = document.createElement('script');
-  interactionPass.src = 'interaction-pass.js';
-  interactionPass.dataset.ephInteractionPass = '1';
-  document.body.appendChild(interactionPass);
+function loadClassicOnce(src, marker) {
+  if (document.querySelector(`script[data-${marker}]`)) return;
+  const script = document.createElement('script');
+  script.src = src;
+  script.dataset[marker] = '1';
+  document.body.appendChild(script);
 }
+function loadModuleOnce(src, marker) {
+  if (document.querySelector(`script[data-${marker}]`)) return;
+  const script = document.createElement('script');
+  script.type = 'module';
+  script.src = src;
+  script.dataset[marker] = '1';
+  document.body.appendChild(script);
+}
+
+loadClassicOnce('interaction-pass.js', 'ephInteractionPass');
+loadModuleOnce('advanced-viewport.js', 'ephAdvancedViewport');
+loadClassicOnce('advanced-ui.js', 'ephAdvancedUi');
+loadClassicOnce('collab-ui.js', 'ephCollabUi');
