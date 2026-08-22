@@ -14,8 +14,13 @@ ws.WebSocketServer = class EasyPeasyHammerWebSocketServer extends NativeWebSocke
 };
 
 try {
-  const encoded = fs.readFileSync(path.join(__dirname, 'assets', 'app.ico.b64'), 'utf8').replace(/\s+/g, '');
-  const icon = electron.nativeImage.createFromBuffer(Buffer.from(encoded, 'base64'));
+  const iconPath = path.join(__dirname, 'assets', 'app.ico');
+  let icon = null;
+  if (fs.existsSync(iconPath)) icon = electron.nativeImage.createFromPath(iconPath);
+  if (!icon || icon.isEmpty()) {
+    const encoded = fs.readFileSync(path.join(__dirname, 'assets', 'app.ico.b64'), 'utf8').replace(/\s+/g, '');
+    icon = electron.nativeImage.createFromBuffer(Buffer.from(encoded, 'base64'));
+  }
   const NativeBrowserWindow = electron.BrowserWindow;
   const IconBrowserWindow = class EasyPeasyHammerWindow extends NativeBrowserWindow {
     constructor(options = {}) {
