@@ -14,7 +14,8 @@ set "ELECTRON_CODE=%ERRORLEVEL%"
 set "EPH_NO_PAUSE="
 if not "%ELECTRON_CODE%"=="0" goto error
 
-if exist "backend\EasyPeasyHammer.AssetHost\bin\Release\net10.0\win-x64\publish\EasyPeasyHammer.AssetHost.exe" goto run
+echo.
+echo Building current Source 2 asset backend...
 set "EPH_NO_PAUSE=1"
 call Build_Backend.bat
 set "BACKEND_CODE=%ERRORLEVEL%"
