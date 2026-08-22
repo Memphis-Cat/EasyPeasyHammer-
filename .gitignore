@@ -3,6 +3,7 @@ node_modules/
 dist/
 .runtime/
 Projects/
+src/bundled/
 backend/**/bin/
 backend/**/obj/
 *.log
