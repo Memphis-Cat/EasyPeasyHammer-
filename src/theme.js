@@ -148,8 +148,13 @@
 
     const viewportButtons = [...document.querySelectorAll('.viewport-top-right .viewport-icon')];
     if (viewportButtons[0]) {
-      viewportButtons[0].title = 'Frame all objects';
-      viewportButtons[0].onclick = () => S.viewport?.frameAll?.();
+      viewportButtons[0].title = 'Cycle viewport view';
+      viewportButtons[0].onclick = () => {
+        const modes = ['Perspective', 'Top', 'Front', 'Side'];
+        S.view = modes[(modes.indexOf(S.view) + 1) % modes.length];
+        S.viewport?.setView?.(S.view);
+        renderViewportControls();
+      };
     }
     if (viewportButtons[1]) {
       viewportButtons[1].title = 'Toggle grid';
@@ -232,8 +237,11 @@
     if (thumbWorkerRunning) return;
     thumbWorkerRunning = true;
     while (thumbQueue.length) {
-      const wait = previewPauseUntil - performance.now();
-      if (wait > 0) await sleep(Math.min(wait, 120));
+      let wait = previewPauseUntil - performance.now();
+      while (wait > 0) {
+        await sleep(Math.min(wait, 80));
+        wait = previewPauseUntil - performance.now();
+      }
       const job = thumbQueue.shift();
       if (!job || job.generation !== thumbGeneration || !job.thumb.isConnected) continue;
       await hydrateMaterialThumb(job.thumb, job.item, job.generation);
