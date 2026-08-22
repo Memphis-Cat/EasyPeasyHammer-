@@ -1,16 +1,17 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
   "license": "UNLICENSED",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron .",
-    "build": "electron-builder --win portable",
-    "build:portable": "electron-builder --win portable"
+    "bundle:renderer": "node bundle-renderer.js",
+    "start": "node bundle-renderer.js && electron .",
+    "dev": "node bundle-renderer.js && electron .",
+    "build": "node bundle-renderer.js && electron-builder --win portable",
+    "build:portable": "node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
     "three": "^0.185.1",
@@ -18,7 +19,8 @@
   },
   "devDependencies": {
     "electron": "43.4.0",
-    "electron-builder": "26.0.11"
+    "electron-builder": "26.0.11",
+    "esbuild": "0.25.9"
   },
   "build": {
     "appId": "com.memphiscat.easypeasyhammer",
@@ -36,7 +38,6 @@
       "collab-network.js",
       "src/**/*",
       "assets/**/*",
-      "node_modules/three/**/*",
       "node_modules/ws/**/*",
       "package.json"
     ],
