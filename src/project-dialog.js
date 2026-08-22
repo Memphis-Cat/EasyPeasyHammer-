@@ -148,10 +148,10 @@ function loadPass(src, marker, module = false) {
     await loadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
     await loadPass('hammer-fidelity.js', 'ephHammerFidelity', true);
     await loadPass('fidelity-v2.js', 'ephFidelityV2', true);
+    await loadPass('texture-projection-v4.js', 'ephTextureProjectionV4', true);
     await loadPass('load-acceleration.js', 'ephLoadAcceleration');
     await loadPass('default-part.js', 'ephDefaultPart');
     await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
-    await loadPass('hammer-uv-v3.js', 'ephHammerUvV3', true);
     await loadPass('advanced-ui.js', 'ephAdvancedUi');
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
