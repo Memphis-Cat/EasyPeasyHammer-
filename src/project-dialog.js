@@ -124,6 +124,7 @@ function loadClassicOnce(src, marker) {
   if (document.querySelector(`script[data-${marker}]`)) return;
   const script = document.createElement('script');
   script.src = src;
+  script.async = false;
   script.dataset[marker] = '1';
   document.body.appendChild(script);
 }
@@ -132,6 +133,7 @@ function loadModuleOnce(src, marker) {
   const script = document.createElement('script');
   script.type = 'module';
   script.src = src;
+  script.async = false;
   script.dataset[marker] = '1';
   document.body.appendChild(script);
 }
