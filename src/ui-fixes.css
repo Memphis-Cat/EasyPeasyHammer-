@@ -244,6 +244,16 @@ select,
   height: 27px !important;
 }
 
+.tree-icon {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.tree-chevron {
+  width: 15px !important;
+  height: 15px !important;
+}
+
 .viewport-icon {
   width: 32px !important;
   height: 32px !important;
