@@ -3,7 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { registerCollaboration } = require('./collab-service');
+const { registerCollaboration } = require('./collab-network');
 
 const REMOTE_PACKAGE_URL = 'https://raw.githubusercontent.com/Memphis-Cat/EasyPeasyHammer-/main/package.json';
 
