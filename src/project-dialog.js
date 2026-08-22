@@ -151,6 +151,7 @@ function loadPass(src, marker, module = false) {
     await loadPass('load-acceleration.js', 'ephLoadAcceleration');
     await loadPass('default-part.js', 'ephDefaultPart');
     await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
+    await loadPass('hammer-uv-v3.js', 'ephHammerUvV3', true);
     await loadPass('advanced-ui.js', 'ephAdvancedUi');
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
