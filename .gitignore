@@ -1,6 +1,8 @@
 # byanca
 node_modules/
 dist/
+backend/**/bin/
+backend/**/obj/
 *.log
 .DS_Store
 Thumbs.db
