@@ -3,7 +3,7 @@
   "name": "easypeasyhammer",
   "version": "0.5.1",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
-  "main": "main.js",
+  "main": "launcher.js",
   "author": "Memphis-Cat",
   "license": "UNLICENSED",
   "scripts": {
@@ -27,6 +27,7 @@
     "asar": true,
     "electronDist": ".runtime/electron-dist",
     "files": [
+      "launcher.js",
       "main.js",
       "preload.js",
       "asset-host.js",
@@ -44,7 +45,7 @@
       }
     ],
     "win": {
-      "icon": "assets/app-icon.ico",
+      "icon": "assets/app.ico",
       "target": ["nsis", "portable"]
     },
     "nsis": {
