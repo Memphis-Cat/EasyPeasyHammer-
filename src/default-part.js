@@ -22,6 +22,9 @@
       try {
         const result = await api.materialPreview(DEFAULT_PART_MATERIAL);
         if (!result?.ok || !result.url) return [512, 512];
+        const width = Number(result.width);
+        const height = Number(result.height);
+        if (width > 0 && height > 0) return [width, height];
         return await new Promise(resolve => {
           const image = new Image();
           image.onload = () => resolve([Math.max(1, image.naturalWidth || image.width || 512), Math.max(1, image.naturalHeight || image.height || 512)]);
