@@ -5,11 +5,15 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { AssetHost } = require('./asset-host');
+const { registerAppServices } = require('./app-services');
 
 let mainWindow = null;
+let chatWindow = null;
 let lastRendererSnapshot = null;
 let assetHost = null;
 const APP_FOLDER = 'EasyPeasyHammer';
+
+registerAppServices({ ipcMain, app });
 
 function getDocumentsRoot() { return path.join(app.getPath('documents'), APP_FOLDER); }
 function getAutosavesRoot() { return path.join(getDocumentsRoot(), 'Autosaves'); }
@@ -142,7 +146,35 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('close', () => { if (lastRendererSnapshot?.project) saveSession(lastRendererSnapshot.project, lastRendererSnapshot.uiState); });
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    if (chatWindow && !chatWindow.isDestroyed()) chatWindow.close();
+  });
+}
+
+function createChatWindow() {
+  if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;
+  chatWindow = new BrowserWindow({
+    width: 860,
+    height: 700,
+    minWidth: 560,
+    minHeight: 480,
+    backgroundColor: '#0a0b0d',
+    title: 'EasyPeasyHammer - Collaborator Chat',
+    autoHideMenuBar: true,
+    frame: false,
+    show: false,
+    parent: mainWindow || undefined,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  chatWindow.loadFile(path.join(__dirname, 'src', 'chat.html'));
+  chatWindow.once('ready-to-show', () => chatWindow?.show());
+  chatWindow.on('closed', () => { chatWindow = null; });
+  return chatWindow;
+}
+
+function windowFromEvent(event) {
+  return BrowserWindow.fromWebContents(event?.sender) || mainWindow;
 }
 
 async function chooseCs2Folder() {
@@ -171,19 +203,20 @@ app.whenReady().then(async () => {
   assetHost = new AssetHost({ cacheRoot: path.join(app.getPath('userData'), 'AssetCache'), cs2Path: assetConfig?.cs2Root || null });
   assetHost.start();
   createMainWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); });
+  app.on('activate', () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); });
 });
 
 app.on('window-all-closed', () => { assetHost?.stop(); if (process.platform !== 'darwin') app.quit(); });
 
-ipcMain.handle('window:minimize', () => { mainWindow?.minimize(); return true; });
-ipcMain.handle('window:toggle-maximize', () => {
-  if (!mainWindow) return false;
-  if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
-  return mainWindow.isMaximized();
+ipcMain.handle('window:minimize', event => { windowFromEvent(event)?.minimize(); return true; });
+ipcMain.handle('window:toggle-maximize', event => {
+  const target = windowFromEvent(event);
+  if (!target) return false;
+  if (target.isMaximized()) target.unmaximize(); else target.maximize();
+  return target.isMaximized();
 });
-ipcMain.handle('window:is-maximized', () => Boolean(mainWindow?.isMaximized()));
-ipcMain.handle('window:close', () => { mainWindow?.close(); return true; });
+ipcMain.handle('window:is-maximized', event => Boolean(windowFromEvent(event)?.isMaximized()));
+ipcMain.handle('window:close', event => { windowFromEvent(event)?.close(); return true; });
 ipcMain.handle('app:get-startup-state', () => getStartupState());
 ipcMain.handle('project:open-vmap', () => openExistingVmap());
 ipcMain.handle('project:create', createNewProject);
@@ -215,3 +248,15 @@ ipcMain.handle('assets:search', async (event, kind, query, limit) => assetHost.r
 ipcMain.handle('assets:material-preview', async (event, resourcePath) => assetHost.request('material-preview', { path: resourcePath }, 60000));
 ipcMain.handle('assets:model-preview', async (event, resourcePath) => assetHost.request('model-preview', { path: resourcePath }, 120000));
 ipcMain.handle('tools:open-workshop', launchWorkshopTools);
+ipcMain.handle('collab:open-chat', () => {
+  try {
+    const target = createChatWindow();
+    if (target.isMinimized()) target.restore();
+    target.show();
+    target.focus();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+ipcMain.handle('collab:is-chat-focused', () => Boolean(chatWindow && !chatWindow.isDestroyed() && chatWindow.isFocused()));
