@@ -120,26 +120,36 @@
   if (fileNew) fileNew.onclick = open;
 })();
 
-function loadClassicOnce(src, marker) {
-  if (document.querySelector(`script[data-${marker}]`)) return;
-  const script = document.createElement('script');
-  script.src = src;
-  script.async = false;
-  script.dataset[marker] = '1';
-  document.body.appendChild(script);
-}
-function loadModuleOnce(src, marker) {
-  if (document.querySelector(`script[data-${marker}]`)) return;
-  const script = document.createElement('script');
-  script.type = 'module';
-  script.src = src;
-  script.async = false;
-  script.dataset[marker] = '1';
-  document.body.appendChild(script);
+function loadPass(src, marker, module = false) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-${marker}]`);
+    if (existing) {
+      if (existing.dataset.loaded === '1') resolve();
+      else {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+      }
+      return;
+    }
+
+    const script = document.createElement('script');
+    if (module) script.type = 'module';
+    script.src = src;
+    script.dataset[marker] = '1';
+    script.addEventListener('load', () => { script.dataset.loaded = '1'; resolve(); }, { once: true });
+    script.addEventListener('error', () => reject(new Error(`Could not load ${src}`)), { once: true });
+    document.body.appendChild(script);
+  });
 }
 
-loadClassicOnce('interaction-pass.js', 'ephInteractionPass');
-loadModuleOnce('advanced-viewport.js', 'ephAdvancedViewport');
-loadClassicOnce('advanced-ui.js', 'ephAdvancedUi');
-loadClassicOnce('bell1.js', 'ephBell1');
-loadClassicOnce('collab-ui.js', 'ephCollabUi');
+(async () => {
+  try {
+    await loadPass('interaction-pass.js', 'ephInteractionPass');
+    await loadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
+    await loadPass('advanced-ui.js', 'ephAdvancedUi');
+    await loadPass('bell1.js', 'ephBell1');
+    await loadPass('collab-ui.js', 'ephCollabUi');
+  } catch (error) {
+    console.error('EasyPeasyHammer editor pass failed to load:', error);
+  }
+})();
