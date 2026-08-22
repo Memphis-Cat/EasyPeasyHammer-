@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
@@ -46,6 +46,8 @@
       }
     ],
     "win": {
+      "signAndEditExecutable": false,
+      "signExecutable": false,
       "target": ["nsis", "portable"]
     },
     "nsis": {
