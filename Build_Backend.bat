@@ -2,6 +2,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "EXIT_CODE=0"
 
 where dotnet >nul 2>nul
 if errorlevel 1 goto nodotnet
@@ -21,11 +22,11 @@ echo Install the .NET 10 SDK and run this file again.
 goto error
 
 :error
+set "EXIT_CODE=1"
 echo.
 echo Backend build stopped because of an error. Check the output above.
 
-echo.
 :done
-pause
-endlocal
-exit /b
+echo.
+if not defined EPH_NO_PAUSE pause
+endlocal & exit /b %EXIT_CODE%
