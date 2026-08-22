@@ -103,15 +103,16 @@
       <button data-action="toggle-right">Toggle Properties</button>
       <button data-action="toggle-bottom">Toggle Bottom Panel</button>
     </div>
-    <div id="buildMenu" class="dropdown-menu hidden"><button data-action="build-placeholder">Compile in Hammer</button></div>
+    <div id="buildMenu" class="dropdown-menu hidden"><button data-action="build-placeholder">Save &amp; Open CS2 Workshop Tools</button></div>
     <div id="windowMenu" class="dropdown-menu hidden"><button data-action="reset-layout">Reset Layout</button></div>
-    <div id="helpMenu" class="dropdown-menu hidden"><button data-action="phase-info">Phase 3 editor</button></div>
+    <div id="helpMenu" class="dropdown-menu hidden"><button data-action="phase-info">Phase 3 single-user editor</button></div>
 
     <main class="editor-layout">
       <aside id="leftPanel" class="left-panel panel">
         <section class="asset-browser">
           <div class="panel-title">Asset Browser</div>
-          <div class="search-row"><input id="assetSearch" type="text" placeholder="Search assets..." /><button class="small-square-button">≡</button></div>
+          <div class="search-row"><input id="assetSearch" type="text" placeholder="Search CS2 assets..." /><button id="cs2AssetSettings" class="small-square-button" title="Choose CS2 folder">≡</button></div>
+          <div class="asset-source-row"><span id="assetSourceStatus">Checking CS2 assets...</span></div>
           <div class="tab-row" id="assetTabs">
             <button data-tab="materials" class="active">Materials</button><button data-tab="models">Models</button><button data-tab="props">Props</button><button data-tab="entities">Entities</button>
           </div>
@@ -177,8 +178,8 @@
   <div id="newProjectModal" class="modal-backdrop hidden">
     <div class="modal-card">
       <h2>Create new project</h2><label>Project name</label><input id="newProjectName" type="text" maxlength="80" placeholder="awp_my_map" />
-      <p>A real editable .vmap will be created in the folder you choose.</p>
-      <div class="modal-actions"><button id="cancelCreateButton" class="secondary-button">Cancel</button><button id="confirmCreateButton" class="primary-button">Choose folder & create</button></div>
+      <p>An editable .vmap will be created in the folder you choose.</p>
+      <div class="modal-actions"><button id="cancelCreateButton" class="secondary-button">Cancel</button><button id="confirmCreateButton" class="primary-button">Choose folder &amp; create</button></div>
     </div>
   </div>
   <div id="toast" class="toast hidden"></div>
