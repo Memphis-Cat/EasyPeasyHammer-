@@ -151,6 +151,10 @@ async function installViewport(viewport) {
     return previousSetObjects(objects, selectedId);
   };
 
+  if (viewport.objects?.length) {
+    viewport.setObjects(viewport.objects, viewport.selectedId);
+  }
+
   try {
     const startup = await window.easyPeasyHammer?.getStartupState?.();
     const source = startup?.lastSession?.uiState?.vmapText;
