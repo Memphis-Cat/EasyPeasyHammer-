@@ -4,21 +4,29 @@
   window.__ephHammerFidelityUi = true;
 
   const sizeCache = new Map();
-  const repaired = new WeakSet();
+  const projectionState = new WeakMap();
+  const announced = new WeakSet();
 
   async function textureSizeFor(materialPath) {
     if (!materialPath || materialPath === 'ERROR') return [512, 512];
     if (sizeCache.has(materialPath)) return sizeCache.get(materialPath);
+
     const pending = (async () => {
       try {
         const result = await api.materialPreview(materialPath);
-        if (!result?.ok || !result.url) return [512, 512];
+        if (!result?.ok) return [512, 512];
+
         const directWidth = Number(result.width);
         const directHeight = Number(result.height);
         if (directWidth > 0 && directHeight > 0) return [directWidth, directHeight];
+        if (!result.url) return [512, 512];
+
         return await new Promise(resolve => {
           const image = new Image();
-          image.onload = () => resolve([Math.max(1, image.naturalWidth || image.width || 512), Math.max(1, image.naturalHeight || image.height || 512)]);
+          image.onload = () => resolve([
+            Math.max(1, image.naturalWidth || image.width || 512),
+            Math.max(1, image.naturalHeight || image.height || 512),
+          ]);
           image.onerror = () => resolve([512, 512]);
           image.src = result.url;
         });
@@ -26,44 +34,61 @@
         return [512, 512];
       }
     })();
+
     sizeCache.set(materialPath, pending);
     return pending;
   }
 
-  const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.0001;
-  const axisIs = (axis, target) => Array.isArray(axis) && target.every((value, i) => near(axis[i], value));
-  const uvLooksOldSquare = uv => Array.isArray(uv) && uv.length >= 3 && uv.every(pair => Array.isArray(pair) && pair.length >= 2 && [0, 1].some(v => near(pair[0], v)) && [0, 1].some(v => near(pair[1], v)));
-
-  function looksLikeLegacyEasyPeasyMapping(object) {
-    if (!object || object.type !== 'part' || !object.faces?.length || !object.faceUVs?.length) return false;
-    let badVerticalFace = false;
-    for (let i = 0; i < object.faces.length; i++) {
-      const normal = VMAP.faceNormal(object.vertices, object.faces[i]);
-      const vertical = Math.abs(normal[2]) < 0.8;
-      if (!vertical) continue;
-      if (uvLooksOldSquare(object.faceUVs[i]) && axisIs(object.faceTextureAxisU?.[i], [1, 0, 0, 0]) && axisIs(object.faceTextureAxisV?.[i], [0, -1, 0, 0])) {
-        badVerticalFace = true;
-        break;
-      }
-    }
-    return badVerticalFace;
+  function projectionKey(object) {
+    if (!object || object.type !== 'part') return '';
+    const vertices = (object.vertices || []).map(vertex => vertex.map(value => Number(value).toFixed(4)).join(',')).join(';');
+    const materials = (object.faceMaterials || []).join('|');
+    const scales = JSON.stringify(object.faceTextureScale || []);
+    const axesU = JSON.stringify(object.faceTextureAxisU || []);
+    const axesV = JSON.stringify(object.faceTextureAxisV || []);
+    return `${materials}::${vertices}::${scales}::${axesU}::${axesV}`;
   }
 
-  async function repairLegacyObject(object) {
-    if (!looksLikeLegacyEasyPeasyMapping(object) || repaired.has(object) || !window.EPH_HAMMER_FIDELITY) return;
-    repaired.add(object);
-    const jobs = object.faces.map(async (_, faceIndex) => {
+  async function synchronizeProjection(object) {
+    if (!object || object.type !== 'part' || !object.faces?.length || !window.EPH_TEXTURE_PROJECTION_V4) return;
+
+    const key = projectionKey(object);
+    const previousState = projectionState.get(object);
+    if (previousState?.key === key || previousState?.pending === key) return;
+    projectionState.set(object, { key: previousState?.key || null, pending: key });
+
+    const sizes = await Promise.all(object.faces.map((_, faceIndex) => {
       const material = object.faceMaterials?.[faceIndex] || 'ERROR';
-      const [width, height] = await textureSizeFor(material);
-      window.EPH_HAMMER_FIDELITY.setFaceMaterialInfo(object, [faceIndex], width, height);
-    });
-    await Promise.all(jobs);
+      return textureSizeFor(material);
+    }));
+
     if (!S.objects.includes(object)) return;
+    if (projectionKey(object) !== key) {
+      projectionState.set(object, { key: null, pending: null });
+      return;
+    }
+
+    const before = JSON.stringify(object.faceUVs || []);
+    object.faceTextureSizes ??= [];
+    sizes.forEach((size, faceIndex) => {
+      object.faceTextureSizes[faceIndex] = [Math.max(1, Number(size[0]) || 512), Math.max(1, Number(size[1]) || 512)];
+    });
+
+    window.EPH_TEXTURE_PROJECTION_V4.projectObject(object);
+    const after = JSON.stringify(object.faceUVs || []);
+    projectionState.set(object, { key: projectionKey(object), pending: null });
+
+    if (before === after) return;
+
     VMAP.applyObjectToDocument(S.doc, object);
     S.viewport?.updateObject(object);
     if (current()?.id === object.id) renderProperties();
-    log(`Repaired Hammer texture projection on ${object.name}`, 'success');
-    markDirty(`Repaired texture projection on ${object.name}`);
+
+    if (!announced.has(object)) {
+      announced.add(object);
+      log(`Synchronized Hammer texture tiling on ${object.name}`, 'success');
+    }
+    markDirty(`Updated texture projection on ${object.name}`);
   }
 
   const originalFaceLabel = faceLabel;
@@ -83,9 +108,11 @@
     const faces = object?.type === 'part' ? [...S.selectedFaces] : [];
     originalApplyMaterial(path);
     if (!object || object.type !== 'part' || !faces.length) return;
+
     textureSizeFor(path).then(([width, height]) => {
-      if (!S.objects.includes(object) || !window.EPH_HAMMER_FIDELITY) return;
-      window.EPH_HAMMER_FIDELITY.setFaceMaterialInfo(object, faces, width, height);
+      if (!S.objects.includes(object) || !window.EPH_TEXTURE_PROJECTION_V4) return;
+      window.EPH_TEXTURE_PROJECTION_V4.setFaceMaterialInfo(object, faces, width, height);
+      projectionState.delete(object);
       VMAP.applyObjectToDocument(S.doc, object);
       S.viewport?.updateObject(object);
       if (current()?.id === object.id) renderProperties();
@@ -97,7 +124,12 @@
     CORE_MATERIALS.unshift({ name: 'Dev Measure Generic 01B', path: defaultMaterial, kind: 'material', source: 'CS2 Dev' });
   }
 
-  setInterval(() => {
-    for (const object of S.objects || []) if (object?.type === 'part') repairLegacyObject(object);
-  }, 650);
+  const synchronizeAll = () => {
+    for (const object of S.objects || []) {
+      if (object?.type === 'part') synchronizeProjection(object);
+    }
+  };
+
+  setTimeout(synchronizeAll, 80);
+  setInterval(synchronizeAll, 450);
 })();
