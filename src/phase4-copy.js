@@ -2,14 +2,14 @@
 (() => {
   function clean() {
     const hints = document.querySelectorAll('.startup-hint');
-    if (hints[0]) hints[0].textContent = 'Saved locally and used as your collaboration name.';
-    if (hints[1]) hints[1].textContent = 'Enter an invite code from the project owner.';
+    if (hints[0] && hints[0].textContent !== 'Saved locally and used as your collaboration name.') hints[0].textContent = 'Saved locally and used as your collaboration name.';
+    if (hints[1] && hints[1].textContent !== 'Enter an invite code from the project owner.') hints[1].textContent = 'Enter an invite code from the project owner.';
 
     const shared = document.querySelector('.shared-project-placeholder');
     if (shared && /will stay listed|will be able|Phase 4/i.test(shared.textContent || '')) shared.textContent = '';
 
     const help = document.querySelector('#helpMenu [data-action="phase-info"]');
-    if (help) help.textContent = 'About EasyPeasyHammer';
+    if (help && help.textContent !== 'About EasyPeasyHammer') help.textContent = 'About EasyPeasyHammer';
 
     const status = document.querySelector('.status-dot');
     if (status && /single-user|phase/i.test(status.title || '')) status.title = 'Collaboration available';
@@ -21,11 +21,12 @@
       if (/interface only|not active yet|will be enabled in Phase 4|will be connected in Phase 4|ready for Phase 4 upload/i.test(text)) node.textContent = '';
     });
 
+    let logsChanged = false;
     if (typeof S !== 'undefined' && Array.isArray(S.logs)) {
       for (const entry of S.logs) {
-        if (/Phase 3 single-user editor ready/i.test(entry.message || '')) entry.message = 'EasyPeasyHammer editor ready';
+        if (/Phase 3 single-user editor ready/i.test(entry.message || '')) { entry.message = 'EasyPeasyHammer editor ready'; logsChanged = true; }
       }
-      if (S.bottomTab === 'console' && typeof renderBottom === 'function') renderBottom();
+      if (logsChanged && S.bottomTab === 'console' && typeof renderBottom === 'function') renderBottom();
     }
   }
 
