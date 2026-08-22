@@ -6,221 +6,191 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>EasyPeasyHammer</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="phase3.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../node_modules/three/build/three.module.js",
+        "three/addons/": "../node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <div id="app">
-    <section id="startupScreen" class="startup-screen">
-      <div class="startup-card">
-        <div class="brand-mark">EPH</div>
-        <h1>EasyPeasyHammer</h1>
-        <p class="startup-subtitle">CS2 map editor</p>
-
-        <div id="resumePanel" class="resume-panel hidden">
-          <div class="resume-label">Last map</div>
-          <div id="resumeName" class="resume-name">Untitled</div>
-          <div id="resumePath" class="resume-path"></div>
-          <button id="continueButton" class="primary-button large-button">Continue editing</button>
-        </div>
-
-        <div class="startup-actions">
-          <button id="openVmapButton" class="secondary-button large-button">Open existing .vmap</button>
-          <button id="createProjectButton" class="secondary-button large-button">Create new project</button>
-        </div>
-
-        <button id="forgetSessionButton" class="text-button hidden">Forget last map</button>
+<div id="app">
+  <section id="startupScreen" class="startup-screen">
+    <div class="startup-card">
+      <div class="brand-mark">EPH</div>
+      <h1>EasyPeasyHammer</h1>
+      <p class="startup-subtitle">CS2 map editor</p>
+      <div id="resumePanel" class="resume-panel hidden">
+        <div class="resume-label">Last map</div>
+        <div id="resumeName" class="resume-name">Untitled</div>
+        <div id="resumePath" class="resume-path"></div>
+        <button id="continueButton" class="primary-button large-button">Continue editing</button>
       </div>
-    </section>
-
-    <section id="editorScreen" class="editor-screen hidden">
-      <header class="app-header">
-        <div class="title-row">
-          <div class="app-title">EasyPeasyHammer</div>
-          <div class="menu-strip">
-            <button class="menu-button" data-menu="fileMenu">File</button>
-            <button class="menu-button" data-menu="editMenu">Edit</button>
-            <button class="menu-button" data-menu="viewMenu">View</button>
-            <button class="menu-button" data-menu="buildMenu">Build</button>
-            <button class="menu-button" data-menu="windowMenu">Window</button>
-            <button class="menu-button" data-menu="helpMenu">Help</button>
-          </div>
-          <div id="projectTitle" class="project-title">Untitled.vmap</div>
-        </div>
-
-        <div class="toolbar-row">
-          <div class="toolbar-group icon-group">
-            <button class="icon-button" id="toolbarNew" title="New project"><img src="../assets/icons/top_toolbar/top_new.png" alt="" /></button>
-            <button class="icon-button" id="toolbarOpen" title="Open VMAP"><img src="../assets/icons/top_toolbar/top_open.png" alt="" /></button>
-            <button class="icon-button" id="toolbarSave" title="Save"><img src="../assets/icons/top_toolbar/top_save.png" alt="" /></button>
-            <button class="icon-button" id="toolbarSaveAll" title="Save all"><img src="../assets/icons/top_toolbar/top_save_all.png" alt="" /></button>
-            <button class="icon-button" id="toolbarDuplicate" title="Duplicate"><img src="../assets/icons/top_toolbar/top_duplicate.png" alt="" /></button>
-            <button class="icon-button" id="toolbarUndo" title="Undo"><img src="../assets/icons/top_toolbar/top_undo.png" alt="" /></button>
-            <button class="icon-button" id="toolbarRedo" title="Redo"><img src="../assets/icons/top_toolbar/top_redo.png" alt="" /></button>
-          </div>
-
-          <div class="toolbar-group mode-group">
-            <button class="tool-mode active" data-tool="select"><img src="../assets/icons/top_toolbar/top_select.png" alt="" /><span>Select</span></button>
-            <button class="tool-mode" data-tool="move"><img src="../assets/icons/top_toolbar/top_move.png" alt="" /><span>Move</span></button>
-            <button class="tool-mode" data-tool="rotate"><img src="../assets/icons/top_toolbar/top_rotate.png" alt="" /><span>Rotate</span></button>
-            <button class="tool-mode" data-tool="scale"><img src="../assets/icons/top_toolbar/top_scale.png" alt="" /><span>Scale</span></button>
-            <button class="toolbar-dropdown" id="spaceModeButton">Local <span>⌄</span></button>
-            <button class="tool-mode" id="topAddPart"><img src="../assets/icons/top_toolbar/top_add_part.png" alt="" /><span>Add Part</span></button>
-          </div>
-
-          <div class="toolbar-spacer"></div>
-
-          <div class="toolbar-group view-icons">
-            <button class="icon-button view-option" data-view-option="bounds"><img src="../assets/icons/view_toolbar/view_tool_01.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="effects"><img src="../assets/icons/view_toolbar/view_tool_02.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="lock"><img src="../assets/icons/view_toolbar/view_tool_03.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="camera"><img src="../assets/icons/view_toolbar/view_tool_04.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="grid1"><img src="../assets/icons/view_toolbar/view_grid_01.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="grid2"><img src="../assets/icons/view_toolbar/view_grid_02.png" alt="" /></button>
-            <button class="icon-button view-option" data-view-option="grid3"><img src="../assets/icons/view_toolbar/view_grid_03.png" alt="" /></button>
-          </div>
-        </div>
-      </header>
-
-      <div id="fileMenu" class="dropdown-menu hidden">
-        <button data-action="new-project">New Project</button>
-        <button data-action="open-vmap">Open VMAP...</button>
-        <button data-action="save">Save</button>
-        <button data-action="reveal">Open Project Folder</button>
-        <div class="menu-separator"></div>
-        <button data-action="return-home">Exit Map</button>
+      <div class="startup-actions">
+        <button id="openVmapButton" class="secondary-button large-button">Open existing .vmap</button>
+        <button id="createProjectButton" class="secondary-button large-button">Create new project</button>
       </div>
-      <div id="editMenu" class="dropdown-menu hidden">
-        <button data-action="undo">Undo</button>
-        <button data-action="redo">Redo</button>
-        <button data-action="duplicate">Duplicate Selected</button>
-        <button data-action="delete">Delete Selected</button>
-      </div>
-      <div id="viewMenu" class="dropdown-menu hidden">
-        <button data-action="toggle-grid">Toggle Grid</button>
-        <button data-action="toggle-left">Toggle Asset Browser</button>
-        <button data-action="toggle-right">Toggle Properties</button>
-        <button data-action="toggle-bottom">Toggle Bottom Panel</button>
-      </div>
-      <div id="buildMenu" class="dropdown-menu hidden">
-        <button data-action="build-placeholder">Compile in Hammer (Phase 3+)</button>
-      </div>
-      <div id="windowMenu" class="dropdown-menu hidden">
-        <button data-action="reset-layout">Reset Layout</button>
-      </div>
-      <div id="helpMenu" class="dropdown-menu hidden">
-        <button data-action="phase-info">Phase 2 interface</button>
-      </div>
-
-      <main class="editor-layout">
-        <aside id="leftPanel" class="left-panel panel">
-          <section class="asset-browser">
-            <div class="panel-title">Asset Browser</div>
-            <div class="search-row">
-              <input id="assetSearch" type="text" placeholder="Search assets..." />
-              <button class="small-square-button">≡</button>
-            </div>
-            <div class="tab-row" id="assetTabs">
-              <button data-tab="materials" class="active">Materials</button>
-              <button data-tab="models">Models</button>
-              <button data-tab="props">Props</button>
-              <button data-tab="entities">Entities</button>
-            </div>
-            <div id="assetGrid" class="asset-grid"></div>
-            <div class="asset-footer"><span id="assetCount">0 items</span><input type="range" min="72" max="130" value="92" id="assetSizeSlider" /></div>
-          </section>
-
-          <nav class="tool-rail" id="toolRail">
-            <button data-tool="select" class="active"><img src="../assets/icons/tools/tool_select.png" alt="" /><span>Select</span></button>
-            <button data-tool="add-part"><img src="../assets/icons/tools/tool_add_part.png" alt="" /><span>Add Part</span></button>
-            <button data-tool="vertex"><img src="../assets/icons/tools/tool_vertex.png" alt="" /><span>Vertex</span></button>
-            <button data-tool="edge"><img src="../assets/icons/tools/tool_edge.png" alt="" /><span>Edge</span></button>
-            <button data-tool="face"><img src="../assets/icons/tools/tool_face.png" alt="" /><span>Face</span></button>
-            <button data-tool="extrude"><img src="../assets/icons/tools/tool_extrude.png" alt="" /><span>Extrude</span></button>
-            <button data-tool="clip"><img src="../assets/icons/tools/tool_clip.png" alt="" /><span>Clip</span></button>
-            <button data-tool="texture"><img src="../assets/icons/tools/tool_texture.png" alt="" /><span>Texture</span></button>
-            <button data-tool="light"><img src="../assets/icons/tools/tool_light.png" alt="" /><span>Light</span></button>
-            <button data-tool="entity"><img src="../assets/icons/tools/tool_entity.png" alt="" /><span>Entity</span></button>
-          </nav>
-        </aside>
-
-        <section class="workspace-column">
-          <div id="viewport" class="viewport purple-render grid-enabled">
-            <div class="viewport-top-left">
-              <button class="viewport-select" id="perspectiveButton">Perspective <span>⌄</span></button>
-              <button class="viewport-select" id="shadingButton">Lit <span>⌄</span></button>
-            </div>
-            <div class="viewport-top-right">
-              <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_layout.png" alt="" /></button>
-              <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_grid_mode.png" alt="" /></button>
-              <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_more.png" alt="" /></button>
-              <button class="viewport-select" id="gridButton"><img src="../assets/icons/viewport/viewport_grid.png" alt="" /> Grid <span>⌄</span></button>
-            </div>
-            <div class="purple-placeholder">
-              <div class="placeholder-cube"></div>
-              <div class="placeholder-title">VMAP render placeholder</div>
-              <div class="placeholder-subtitle">Rendering starts in Phase 3</div>
-            </div>
-            <div class="axis-widget"><span class="axis-z">Z</span><span class="axis-y">Y</span><span class="axis-x">X</span></div>
-          </div>
-
-          <section id="bottomPanel" class="bottom-panel panel">
-            <div class="bottom-tabs">
-              <button data-bottom-tab="console" class="active">Console</button>
-              <button data-bottom-tab="build">Build Output</button>
-              <button data-bottom-tab="collaborators">Collaborators</button>
-              <button data-bottom-tab="project">Project</button>
-            </div>
-            <div id="bottomContent" class="bottom-content"></div>
-          </section>
-        </section>
-
-        <aside id="rightPanel" class="right-panel panel">
-          <section class="scene-panel">
-            <div class="right-tabs"><button class="active">Scene</button><button>Hierarchy</button></div>
-            <div class="search-row"><input id="sceneSearch" type="text" placeholder="Search..." /></div>
-            <div id="sceneTree" class="scene-tree"></div>
-          </section>
-
-          <section class="properties-panel">
-            <div class="panel-title">Properties</div>
-            <div id="propertiesContent" class="properties-content"></div>
-          </section>
-        </aside>
-      </main>
-
-      <footer class="status-bar">
-        <div id="mapStatus">Map: Untitled.vmap</div>
-        <div class="status-divider"></div>
-        <div id="autosaveStatus">Autosave ready</div>
-        <div class="status-spacer"></div>
-        <label class="status-select">Grid: <select id="gridSize"><option>8</option><option>16</option><option>32</option><option selected>64</option><option>128</option></select></label>
-        <button id="snapButton" class="status-button active">Snap: On</button>
-        <label class="status-select">Angle Snap: <select id="angleSnap"><option>5°</option><option selected>15°</option><option>30°</option><option>45°</option></select></label>
-        <button id="exportButton" class="status-button primary-status">Export VMAP</button>
-        <button id="hammerButton" class="status-button">Open in Hammer</button>
-        <span class="status-dot offline" title="Offline editor"></span>
-      </footer>
-    </section>
-
-    <div id="newProjectModal" class="modal-backdrop hidden">
-      <div class="modal-card">
-        <h2>Create new project</h2>
-        <label>Project name</label>
-        <input id="newProjectName" type="text" maxlength="80" placeholder="awp_my_map" />
-        <p>A project folder and a temporary .vmap shell will be created in the folder you choose.</p>
-        <div class="modal-actions">
-          <button id="cancelCreateButton" class="secondary-button">Cancel</button>
-          <button id="confirmCreateButton" class="primary-button">Choose folder & create</button>
-        </div>
-      </div>
+      <button id="forgetSessionButton" class="text-button hidden">Forget last map</button>
     </div>
+  </section>
 
-    <div id="toast" class="toast hidden"></div>
+  <section id="editorScreen" class="editor-screen hidden">
+    <header class="app-header">
+      <div class="title-row">
+        <div class="app-title">EasyPeasyHammer</div>
+        <div class="menu-strip">
+          <button class="menu-button" data-menu="fileMenu">File</button>
+          <button class="menu-button" data-menu="editMenu">Edit</button>
+          <button class="menu-button" data-menu="viewMenu">View</button>
+          <button class="menu-button" data-menu="buildMenu">Build</button>
+          <button class="menu-button" data-menu="windowMenu">Window</button>
+          <button class="menu-button" data-menu="helpMenu">Help</button>
+        </div>
+        <div id="projectTitle" class="project-title">Untitled.vmap</div>
+      </div>
+
+      <div class="toolbar-row">
+        <div class="toolbar-group icon-group">
+          <button class="icon-button" id="toolbarNew" title="New project"><img src="../assets/icons/top_toolbar/top_new.png" alt="" /></button>
+          <button class="icon-button" id="toolbarOpen" title="Open VMAP"><img src="../assets/icons/top_toolbar/top_open.png" alt="" /></button>
+          <button class="icon-button" id="toolbarSave" title="Save"><img src="../assets/icons/top_toolbar/top_save.png" alt="" /></button>
+          <button class="icon-button" id="toolbarSaveAll" title="Save all"><img src="../assets/icons/top_toolbar/top_save_all.png" alt="" /></button>
+          <button class="icon-button" id="toolbarDuplicate" title="Duplicate"><img src="../assets/icons/top_toolbar/top_duplicate.png" alt="" /></button>
+          <button class="icon-button" id="toolbarUndo" title="Undo"><img src="../assets/icons/top_toolbar/top_undo.png" alt="" /></button>
+          <button class="icon-button" id="toolbarRedo" title="Redo"><img src="../assets/icons/top_toolbar/top_redo.png" alt="" /></button>
+        </div>
+        <div class="toolbar-group mode-group">
+          <button class="tool-mode active" data-tool="select"><img src="../assets/icons/top_toolbar/top_select.png" alt="" /><span>Select</span></button>
+          <button class="tool-mode" data-tool="move"><img src="../assets/icons/top_toolbar/top_move.png" alt="" /><span>Move</span></button>
+          <button class="tool-mode" data-tool="rotate"><img src="../assets/icons/top_toolbar/top_rotate.png" alt="" /><span>Rotate</span></button>
+          <button class="tool-mode" data-tool="scale"><img src="../assets/icons/top_toolbar/top_scale.png" alt="" /><span>Scale</span></button>
+          <button class="toolbar-dropdown" id="spaceModeButton">Local <span>⌄</span></button>
+          <button class="tool-mode" id="topAddPart"><img src="../assets/icons/top_toolbar/top_add_part.png" alt="" /><span>Add Part</span></button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-group view-icons">
+          <button class="icon-button view-option" data-view-option="bounds"><img src="../assets/icons/view_toolbar/view_tool_01.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="effects"><img src="../assets/icons/view_toolbar/view_tool_02.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="lock"><img src="../assets/icons/view_toolbar/view_tool_03.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="camera"><img src="../assets/icons/view_toolbar/view_tool_04.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="grid1"><img src="../assets/icons/view_toolbar/view_grid_01.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="grid2"><img src="../assets/icons/view_toolbar/view_grid_02.png" alt="" /></button>
+          <button class="icon-button view-option" data-view-option="grid3"><img src="../assets/icons/view_toolbar/view_grid_03.png" alt="" /></button>
+        </div>
+      </div>
+    </header>
+
+    <div id="fileMenu" class="dropdown-menu hidden">
+      <button data-action="new-project">New Project</button>
+      <button data-action="open-vmap">Open VMAP...</button>
+      <button data-action="save">Save VMAP</button>
+      <button data-action="reveal">Open Project Folder</button>
+      <div class="menu-separator"></div>
+      <button data-action="return-home">Exit Map</button>
+    </div>
+    <div id="editMenu" class="dropdown-menu hidden">
+      <button data-action="undo">Undo</button>
+      <button data-action="redo">Redo</button>
+      <button data-action="duplicate">Duplicate Selected</button>
+      <button data-action="delete">Delete Selected</button>
+    </div>
+    <div id="viewMenu" class="dropdown-menu hidden">
+      <button data-action="toggle-grid">Toggle Grid</button>
+      <button data-action="toggle-left">Toggle Asset Browser</button>
+      <button data-action="toggle-right">Toggle Properties</button>
+      <button data-action="toggle-bottom">Toggle Bottom Panel</button>
+    </div>
+    <div id="buildMenu" class="dropdown-menu hidden"><button data-action="build-placeholder">Compile in Hammer</button></div>
+    <div id="windowMenu" class="dropdown-menu hidden"><button data-action="reset-layout">Reset Layout</button></div>
+    <div id="helpMenu" class="dropdown-menu hidden"><button data-action="phase-info">Phase 3 editor</button></div>
+
+    <main class="editor-layout">
+      <aside id="leftPanel" class="left-panel panel">
+        <section class="asset-browser">
+          <div class="panel-title">Asset Browser</div>
+          <div class="search-row"><input id="assetSearch" type="text" placeholder="Search assets..." /><button class="small-square-button">≡</button></div>
+          <div class="tab-row" id="assetTabs">
+            <button data-tab="materials" class="active">Materials</button><button data-tab="models">Models</button><button data-tab="props">Props</button><button data-tab="entities">Entities</button>
+          </div>
+          <div id="assetGrid" class="asset-grid"></div>
+          <div class="asset-footer"><span id="assetCount">0 items</span><input type="range" min="72" max="130" value="92" id="assetSizeSlider" /></div>
+        </section>
+        <nav class="tool-rail" id="toolRail">
+          <button data-tool="select" class="active"><img src="../assets/icons/tools/tool_select.png" alt="" /><span>Select</span></button>
+          <button data-tool="add-part"><img src="../assets/icons/tools/tool_add_part.png" alt="" /><span>Add Part</span></button>
+          <button data-tool="vertex"><img src="../assets/icons/tools/tool_vertex.png" alt="" /><span>Vertex</span></button>
+          <button data-tool="edge"><img src="../assets/icons/tools/tool_edge.png" alt="" /><span>Edge</span></button>
+          <button data-tool="face"><img src="../assets/icons/tools/tool_face.png" alt="" /><span>Face</span></button>
+          <button data-tool="extrude"><img src="../assets/icons/tools/tool_extrude.png" alt="" /><span>Extrude</span></button>
+          <button data-tool="clip"><img src="../assets/icons/tools/tool_clip.png" alt="" /><span>Clip</span></button>
+          <button data-tool="texture"><img src="../assets/icons/tools/tool_texture.png" alt="" /><span>Texture</span></button>
+          <button data-tool="light"><img src="../assets/icons/tools/tool_light.png" alt="" /><span>Light</span></button>
+          <button data-tool="entity"><img src="../assets/icons/tools/tool_entity.png" alt="" /><span>Entity</span></button>
+        </nav>
+      </aside>
+
+      <section class="workspace-column">
+        <div id="viewport" class="viewport grid-enabled">
+          <div id="threeViewport" class="three-viewport"></div>
+          <div class="viewport-top-left">
+            <button class="viewport-select" id="perspectiveButton">Perspective <span>⌄</span></button>
+            <button class="viewport-select" id="shadingButton">Lit <span>⌄</span></button>
+          </div>
+          <div class="viewport-top-right">
+            <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_layout.png" alt="" /></button>
+            <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_grid_mode.png" alt="" /></button>
+            <button class="viewport-icon"><img src="../assets/icons/viewport/viewport_more.png" alt="" /></button>
+            <button class="viewport-select" id="gridButton"><img src="../assets/icons/viewport/viewport_grid.png" alt="" /> Grid <span>⌄</span></button>
+          </div>
+          <div class="axis-widget"><span class="axis-z">Z</span><span class="axis-y">Y</span><span class="axis-x">X</span></div>
+        </div>
+        <section id="bottomPanel" class="bottom-panel panel">
+          <div class="bottom-tabs"><button data-bottom-tab="console" class="active">Console</button><button data-bottom-tab="build">Build Output</button><button data-bottom-tab="collaborators">Collaborators</button><button data-bottom-tab="project">Project</button></div>
+          <div id="bottomContent" class="bottom-content"></div>
+        </section>
+      </section>
+
+      <aside id="rightPanel" class="right-panel panel">
+        <section class="scene-panel">
+          <div class="right-tabs"><button class="active">Scene</button><button>Hierarchy</button></div>
+          <div class="search-row"><input id="sceneSearch" type="text" placeholder="Search..." /></div>
+          <div id="sceneTree" class="scene-tree"></div>
+        </section>
+        <section class="properties-panel"><div class="panel-title">Properties</div><div id="propertiesContent" class="properties-content"></div></section>
+      </aside>
+    </main>
+
+    <footer class="status-bar">
+      <div id="mapStatus">Map: Untitled.vmap</div><div class="status-divider"></div><div id="autosaveStatus">Autosave ready</div><div class="status-spacer"></div>
+      <label class="status-select">Grid: <select id="gridSize"><option>8</option><option>16</option><option>32</option><option selected>64</option><option>128</option></select></label>
+      <button id="snapButton" class="status-button active">Snap: On</button>
+      <label class="status-select">Angle Snap: <select id="angleSnap"><option>5°</option><option selected>15°</option><option>30°</option><option>45°</option></select></label>
+      <button id="exportButton" class="status-button primary-status">Save VMAP</button>
+      <button id="hammerButton" class="status-button">Open in Hammer</button>
+      <span class="status-dot offline" title="Single-user editor"></span>
+    </footer>
+  </section>
+
+  <div id="newProjectModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <h2>Create new project</h2><label>Project name</label><input id="newProjectName" type="text" maxlength="80" placeholder="awp_my_map" />
+      <p>A real editable .vmap will be created in the folder you choose.</p>
+      <div class="modal-actions"><button id="cancelCreateButton" class="secondary-button">Cancel</button><button id="confirmCreateButton" class="primary-button">Choose folder & create</button></div>
+    </div>
   </div>
-  <script src="icons/hierarchy.js"></script>
-  <script src="icons/tools.js"></script>
-  <script src="icons/top_toolbar.js"></script>
-  <script src="icons/view_toolbar.js"></script>
-  <script src="icons/viewport.js"></script>
-  <script src="renderer.js"></script>
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="icons/hierarchy.js"></script>
+<script src="icons/tools.js"></script>
+<script src="icons/top_toolbar.js"></script>
+<script src="icons/view_toolbar.js"></script>
+<script src="icons/viewport.js"></script>
+<script src="vmap.js"></script>
+<script type="module" src="viewport3d.js"></script>
+<script src="renderer.js"></script>
 </body>
 </html>
