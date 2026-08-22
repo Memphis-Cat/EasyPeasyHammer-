@@ -2,6 +2,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('easyPeasyHammer', {
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
   getStartupState: () => ipcRenderer.invoke('app:get-startup-state'),
   openVmap: () => ipcRenderer.invoke('project:open-vmap'),
   createProject: (name) => ipcRenderer.invoke('project:create', name),
