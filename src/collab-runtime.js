@@ -6,6 +6,8 @@
   let collabState = { role: null, connected: false, users: [], chatHistory: [] };
   let applyingRemote = false;
   let snapshotTimer = null;
+  let liveSnapshotTimer = null;
+  let lastLiveSnapshotAt = 0;
   let persistenceTimer = null;
   let lastSelection = Symbol('initial');
   let lastCursorSent = 0;
@@ -64,8 +66,6 @@
       S.selectedId = S.objects.some(x => x.id === localSelection) ? localSelection : 'world';
       S.selectedFaces = new Set([0]);
       S.subSelection = null;
-      S.undo = [];
-      S.redo = [];
       S.dirty = true;
       renderAll();
       S.viewport?.setObjects(S.objects, S.selectedId);
@@ -87,20 +87,54 @@
     return collabState;
   }
 
-  function scheduleSnapshot() {
+  async function sendSnapshotNow() {
+    if (applyingRemote || !collabState.connected || !S.project || !S.doc) return;
+    try { await api.collabSendSnapshot(makeSnapshot()); } catch {}
+  }
+
+  function scheduleSnapshot(delay = 120) {
     if (applyingRemote || !collabState.connected || !S.project || !S.doc) return;
     clearTimeout(snapshotTimer);
-    snapshotTimer = setTimeout(async () => {
+    snapshotTimer = setTimeout(sendSnapshotNow, Math.max(0, delay));
+  }
+
+  function streamLiveSnapshot() {
+    if (applyingRemote || !collabState.connected || !S.project || !S.doc) return;
+    const frameMs = 33;
+    const now = performance.now();
+    const wait = Math.max(0, frameMs - (now - lastLiveSnapshotAt));
+    if (liveSnapshotTimer) return;
+    liveSnapshotTimer = setTimeout(async () => {
+      liveSnapshotTimer = null;
+      lastLiveSnapshotAt = performance.now();
+      await sendSnapshotNow();
+    }, wait);
+  }
+
+  function installLiveViewportSync() {
+    const viewport = S.viewport || window.EPH3D;
+    if (!viewport || viewport.__ephLiveCollabSync) return;
+    viewport.__ephLiveCollabSync = true;
+    const original = viewport.callbacks.change;
+    viewport.callbacks.change = (object, commit) => {
+      original?.(object, commit);
       if (applyingRemote || !collabState.connected) return;
-      try { await api.collabSendSnapshot(makeSnapshot()); } catch {}
-    }, 120);
+      if (commit) {
+        clearTimeout(liveSnapshotTimer);
+        liveSnapshotTimer = null;
+        lastLiveSnapshotAt = performance.now();
+        sendSnapshotNow();
+      } else {
+        streamLiveSnapshot();
+      }
+    };
   }
 
   if (typeof markDirty === 'function' && !markDirty.__ephCollaboration) {
     const originalMarkDirty = markDirty;
     markDirty = function(message) {
       originalMarkDirty(message);
-      scheduleSnapshot();
+      scheduleSnapshot(80);
     };
     markDirty.__ephCollaboration = true;
   }
@@ -133,6 +167,9 @@
       await api.collabLeave();
       return { ok: false, error: 'The shared project could not be loaded.' };
     }
+    applyGrouping(result.snapshot || null);
+    renderTree();
+    S.viewport?.setObjects(S.objects, S.selectedId);
     log(`Joined ${result.project.name}`, 'success');
     window.EPH_COLLAB_RENDER?.();
     await refreshSharedProjects();
@@ -251,12 +288,13 @@
   setInterval(() => {
     installStartupJoin();
     installCursorSharing();
+    installLiveViewportSync();
     cleanVisiblePlaceholderText();
     if (collabState.connected && S.selectedId !== lastSelection) {
       lastSelection = S.selectedId;
       api.collabSendSelection(S.selectedId).catch?.(() => {});
     }
-  }, 180);
+  }, 120);
 
   window.EPH_COLLAB = {
     state: () => collabState,
@@ -267,6 +305,8 @@
     leave,
     kick: peerId => api.collabKick(peerId),
     refreshSharedProjects,
+    sendSnapshotNow,
+    scheduleSnapshot,
     remoteSelections,
     remoteCursors,
   };
