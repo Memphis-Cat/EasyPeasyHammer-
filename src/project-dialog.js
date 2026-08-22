@@ -142,24 +142,30 @@ function loadPass(src, marker, module = false) {
   });
 }
 
-(async () => {
+async function safeLoadPass(src, marker, module = false) {
   try {
-    await loadPass('interaction-pass.js', 'ephInteractionPass');
-    await loadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
-    await loadPass('hammer-fidelity.js', 'ephHammerFidelity', true);
-    await loadPass('fidelity-v2.js', 'ephFidelityV2', true);
-    await loadPass('texture-projection-v4.js', 'ephTextureProjectionV4', true);
-    await loadPass('load-acceleration.js', 'ephLoadAcceleration');
-    await loadPass('default-part.js', 'ephDefaultPart');
-    await loadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
-    await loadPass('advanced-ui.js', 'ephAdvancedUi');
-    await loadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
-    await loadPass('phase4-copy.js', 'ephPhase4Copy');
-    await loadPass('collab-runtime.js', 'ephCollabRuntime');
-    await loadPass('collab-visuals.js', 'ephCollabVisuals', true);
-    await loadPass('bell1.js', 'ephBell1');
-    await loadPass('collab-ui.js', 'ephCollabUi');
+    await loadPass(src, marker, module);
+    return true;
   } catch (error) {
-    console.error('EasyPeasyHammer editor pass failed to load:', error);
+    console.error(`EasyPeasyHammer pass failed: ${src}`, error);
+    return false;
   }
+}
+
+(async () => {
+  await safeLoadPass('interaction-pass.js', 'ephInteractionPass');
+  await safeLoadPass('advanced-viewport.js', 'ephAdvancedViewport', true);
+  await safeLoadPass('hammer-fidelity.js', 'ephHammerFidelity', true);
+  await safeLoadPass('fidelity-v2.js', 'ephFidelityV2', true);
+  await safeLoadPass('texture-projection-v4.js', 'ephTextureProjectionV4', true);
+  await safeLoadPass('load-acceleration.js', 'ephLoadAcceleration');
+  await safeLoadPass('default-part.js', 'ephDefaultPart');
+  await safeLoadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
+  await safeLoadPass('advanced-ui.js', 'ephAdvancedUi');
+  await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
+  await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
+  await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
+  await safeLoadPass('collab-visuals.js', 'ephCollabVisuals', true);
+  await safeLoadPass('bell1.js', 'ephBell1');
+  await safeLoadPass('collab-ui.js', 'ephCollabUi');
 })();
