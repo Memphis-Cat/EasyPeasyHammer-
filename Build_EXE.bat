@@ -11,8 +11,14 @@ set "EPH_NO_PAUSE="
 if not "%BACKEND_CODE%"=="0" goto error
 
 echo Installing/updating Electron dependencies...
-call npm install
+call npm install --ignore-scripts
 if errorlevel 1 goto error
+
+set "EPH_NO_PAUSE=1"
+call Ensure_Electron.bat
+set "ELECTRON_CODE=%ERRORLEVEL%"
+set "EPH_NO_PAUSE="
+if not "%ELECTRON_CODE%"=="0" goto error
 
 call npm run build
 if errorlevel 1 goto error
