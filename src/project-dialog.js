@@ -156,6 +156,7 @@ function loadPass(src, marker, module = false) {
     await loadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
     await loadPass('phase4-copy.js', 'ephPhase4Copy');
     await loadPass('collab-runtime.js', 'ephCollabRuntime');
+    await loadPass('collab-live-sync.js', 'ephCollabLiveSync');
     await loadPass('collab-visuals.js', 'ephCollabVisuals', true);
     await loadPass('bell1.js', 'ephBell1');
     await loadPass('collab-ui.js', 'ephCollabUi');
