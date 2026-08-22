@@ -31,11 +31,27 @@ set "ELECTRON_CODE=%ERRORLEVEL%"
 set "EPH_NO_PAUSE="
 if not "%ELECTRON_CODE%"=="0" goto error
 
+echo.
+echo Removing previous build artifacts...
+if exist "dist" rmdir /s /q "dist"
+if exist "dist" (
+  echo Could not remove the old dist folder. Close any EasyPeasyHammer EXE or Explorer preview using it and try again.
+  goto error
+)
+
+echo Building fresh standalone EasyPeasyHammer.exe...
 call npm run build
 if errorlevel 1 goto error
 
+if not exist "dist\EasyPeasyHammer.exe" (
+  echo.
+  echo Build finished but dist\EasyPeasyHammer.exe was not created.
+  goto error
+)
+
 echo.
-echo Build complete. Check the dist folder for the installer and portable .exe.
+echo Build complete.
+echo Standalone application: dist\EasyPeasyHammer.exe
 goto done
 
 :error
