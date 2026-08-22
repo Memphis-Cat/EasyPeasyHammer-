@@ -66,6 +66,9 @@
     renderBottom.__ephCollabUi = true;
   }
 
+  const inviteInput = document.getElementById('ephInviteCode');
+  if (inviteInput) { inviteInput.maxLength = 4096; inviteInput.placeholder = 'Paste invite code'; }
+
   window.EPH_COLLAB_RENDER = renderCollaborators;
   window.EPH_COLLAB_NOTIFY = async () => {
     try { if (await api.isCollaboratorChatFocused?.()) return; } catch {}
