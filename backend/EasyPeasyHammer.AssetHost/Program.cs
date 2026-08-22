@@ -153,7 +153,6 @@ sealed class AssetService : IDisposable
             var normalized = NormalizeSourcePath(materialPath, ".vmat");
             var key = Hash(normalized);
             var outPath = Path.Combine(cacheRoot, "materials", key + ".png");
-            if (File.Exists(outPath)) return new { ok = true, path = outPath, resource = normalized };
 
             using var materialResource = loader.LoadFileCompiled(normalized);
             if (materialResource?.DataBlock is not Material material) return new { ok = false, error = "Material could not be decoded." };
@@ -167,11 +166,27 @@ sealed class AssetService : IDisposable
             var sourceTexture = NormalizeSourcePath(texturePath, ".vtex");
             using var textureResource = loader.LoadFileCompiled(sourceTexture);
             if (textureResource?.DataBlock is not Texture texture) return new { ok = false, error = "Material texture could not be decoded." };
-            using var bitmap = texture.GenerateBitmap();
-            var png = TextureExtract.ToPngImage(bitmap);
-            Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-            File.WriteAllBytes(outPath, png);
-            return new { ok = true, path = outPath, resource = normalized, texture = sourceTexture, shader = material.ShaderName };
+
+            var width = Math.Max(1, (int)texture.ActualWidth);
+            var height = Math.Max(1, (int)texture.ActualHeight);
+            if (!File.Exists(outPath))
+            {
+                using var bitmap = texture.GenerateBitmap();
+                var png = TextureExtract.ToPngImage(bitmap);
+                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+                File.WriteAllBytes(outPath, png);
+            }
+
+            return new
+            {
+                ok = true,
+                path = outPath,
+                resource = normalized,
+                texture = sourceTexture,
+                shader = material.ShaderName,
+                width,
+                height
+            };
         }
         catch (Exception ex)
         {
