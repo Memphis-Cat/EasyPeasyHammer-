@@ -27,6 +27,10 @@ window.addEventListener('DOMContentLoaded', () => {
   startupStyle.href = 'startup.css';
   document.head.appendChild(startupStyle);
 
+  const themeScript = document.createElement('script');
+  themeScript.src = 'theme.js';
+  document.head.appendChild(themeScript);
+
   const modal = document.getElementById('newProjectModal');
   const input = document.getElementById('newProjectName');
   if (!modal || !input) return;
