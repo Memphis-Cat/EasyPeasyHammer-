@@ -8,6 +8,11 @@ echo Installing/updating Electron dependencies...
 call npm install --ignore-scripts
 if errorlevel 1 goto error
 
+echo.
+echo Building browser renderer bundles...
+node bundle-renderer.js
+if errorlevel 1 goto error
+
 set "EPH_NO_PAUSE=1"
 call Ensure_Electron.bat
 set "ELECTRON_CODE=%ERRORLEVEL%"
