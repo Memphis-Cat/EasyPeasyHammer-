@@ -27,5 +27,25 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   modelPreview: (resourcePath) => ipcRenderer.invoke('assets:model-preview', resourcePath),
   openWorkshopTools: () => ipcRenderer.invoke('tools:open-workshop'),
   openCollaboratorChat: () => ipcRenderer.invoke('collab:open-chat'),
-  isCollaboratorChatFocused: () => ipcRenderer.invoke('collab:is-chat-focused')
+  isCollaboratorChatFocused: () => ipcRenderer.invoke('collab:is-chat-focused'),
+  collabState: () => ipcRenderer.invoke('collab:get-state'),
+  collabHost: (payload) => ipcRenderer.invoke('collab:host', payload),
+  collabJoin: (code, username) => ipcRenderer.invoke('collab:join', code, username),
+  collabLeave: () => ipcRenderer.invoke('collab:leave'),
+  collabKick: (peerId) => ipcRenderer.invoke('collab:kick', peerId),
+  collabSendSnapshot: (snapshot) => ipcRenderer.invoke('collab:send-snapshot', snapshot),
+  collabSendSelection: (selectedId) => ipcRenderer.invoke('collab:send-selection', selectedId),
+  collabSendCursor: (point) => ipcRenderer.invoke('collab:send-cursor', point),
+  collabSendChat: (text, replyTo = null) => ipcRenderer.invoke('collab:send-chat', text, replyTo),
+  collabPickFile: () => ipcRenderer.invoke('collab:pick-file'),
+  collabSendFile: (token, text = '', replyTo = null) => ipcRenderer.invoke('collab:send-file', token, text, replyTo),
+  collabSaveFile: (localPath, suggestedName) => ipcRenderer.invoke('collab:save-file', localPath, suggestedName),
+  collabShowFile: (localPath) => ipcRenderer.invoke('collab:show-file', localPath),
+  collabListShared: () => ipcRenderer.invoke('collab:list-shared'),
+  collabForgetShared: (sessionId) => ipcRenderer.invoke('collab:forget-shared', sessionId),
+  onCollaborationEvent: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('collab:event', listener);
+    return () => ipcRenderer.removeListener('collab:event', listener);
+  }
 });
