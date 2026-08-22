@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   collabLeave: () => ipcRenderer.invoke('collab:leave'),
   collabKick: (peerId) => ipcRenderer.invoke('collab:kick', peerId),
   collabSendSnapshot: (snapshot) => ipcRenderer.invoke('collab:send-snapshot', snapshot),
+  collabSendLiveObject: (object) => ipcRenderer.invoke('collab:send-live-object', object),
   collabSendSelection: (selectedId) => ipcRenderer.invoke('collab:send-selection', selectedId),
   collabSendCursor: (point) => ipcRenderer.invoke('collab:send-cursor', point),
   collabSendChat: (text, replyTo = null) => ipcRenderer.invoke('collab:send-chat', text, replyTo),
