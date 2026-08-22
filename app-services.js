@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { registerCollaboration } = require('./collab-service');
 
 const REMOTE_PACKAGE_URL = 'https://raw.githubusercontent.com/Memphis-Cat/EasyPeasyHammer-/main/package.json';
 
@@ -115,6 +116,7 @@ function registerAppServices({ ipcMain, app }) {
   });
   ipcMain.handle('profile:get', () => getProfile(app));
   ipcMain.handle('profile:set', (event, username) => setProfile(app, username));
+  registerCollaboration({ ipcMain, app });
 }
 
 module.exports = { registerAppServices, compareVersions };
