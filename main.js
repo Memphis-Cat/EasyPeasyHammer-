@@ -128,10 +128,19 @@ function saveVmap(vmapPath, text, makeBackup = true) {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1680, height: 980, minWidth: 1180, minHeight: 720, backgroundColor: '#0f1115', title: 'EasyPeasyHammer', autoHideMenuBar: true,
+    width: 1680,
+    height: 980,
+    minWidth: 1180,
+    minHeight: 720,
+    backgroundColor: '#090a0c',
+    title: 'EasyPeasyHammer',
+    autoHideMenuBar: true,
+    frame: false,
+    show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('close', () => { if (lastRendererSnapshot?.project) saveSession(lastRendererSnapshot.project, lastRendererSnapshot.uiState); });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
@@ -167,6 +176,14 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => { assetHost?.stop(); if (process.platform !== 'darwin') app.quit(); });
 
+ipcMain.handle('window:minimize', () => { mainWindow?.minimize(); return true; });
+ipcMain.handle('window:toggle-maximize', () => {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
+  return mainWindow.isMaximized();
+});
+ipcMain.handle('window:is-maximized', () => Boolean(mainWindow?.isMaximized()));
+ipcMain.handle('window:close', () => { mainWindow?.close(); return true; });
 ipcMain.handle('app:get-startup-state', () => getStartupState());
 ipcMain.handle('project:open-vmap', () => openExistingVmap());
 ipcMain.handle('project:create', createNewProject);
