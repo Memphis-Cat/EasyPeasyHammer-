@@ -1,0 +1,53 @@
+<!-- byanca -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyPeasyHammer Chat</title>
+  <link rel="stylesheet" href="chat-window.css">
+</head>
+<body>
+  <header class="chat-titlebar">
+    <div class="chat-titlebar-drag"><strong>EasyPeasyHammer</strong><span>Collaborator Chat</span></div>
+    <div class="chat-window-buttons">
+      <button id="chatMinimize" type="button" aria-label="Minimize">—</button>
+      <button id="chatMaximize" type="button" aria-label="Maximize">□</button>
+      <button id="chatClose" class="close" type="button" aria-label="Close">×</button>
+    </div>
+  </header>
+
+  <main class="chat-shell">
+    <section class="chat-header">
+      <div>
+        <h1>Project chat</h1>
+        <p>Phase 4 interface — networking is not connected yet.</p>
+      </div>
+    </section>
+
+    <section id="chatMessages" class="chat-messages">
+      <article class="chat-message" data-message-id="welcome">
+        <div class="chat-meta">EasyPeasyHammer</div>
+        <div>Collaborator chat opens in its own window now.</div>
+        <div class="chat-file-card">Replies, images and files up to 1 GB are represented here. Message delivery and file transfer will be connected in Phase 4.</div>
+      </article>
+    </section>
+
+    <section class="chat-composer">
+      <div id="chatReplying" class="chat-replying">
+        <span>Replying to message</span>
+        <button id="cancelReply" type="button">×</button>
+      </div>
+      <div class="chat-compose-row">
+        <button id="chatAttach" class="attach" type="button" title="Attach up to 1 GB">＋</button>
+        <textarea id="chatInput" placeholder="Message collaborators..." spellcheck="true"></textarea>
+        <button id="chatSend" class="chat-send" type="button">Send</button>
+      </div>
+      <input id="chatFileInput" type="file" hidden>
+      <div id="chatFileDraft" class="chat-file-note">Attach images or files up to 1 GB.</div>
+    </section>
+  </main>
+
+  <script src="chat-window.js"></script>
+</body>
+</html>
