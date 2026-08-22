@@ -20,6 +20,11 @@ set "ELECTRON_CODE=%ERRORLEVEL%"
 set "EPH_NO_PAUSE="
 if not "%ELECTRON_CODE%"=="0" goto error
 
+echo.
+echo Generating EasyPeasyHammer application icon...
+node generate-icon.js
+if errorlevel 1 goto error
+
 call npm run build
 if errorlevel 1 goto error
 
