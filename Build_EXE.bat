@@ -49,9 +49,16 @@ if not exist "dist\EasyPeasyHammer.exe" (
   goto error
 )
 
+echo Cleaning temporary builder output...
+if exist "dist\win-unpacked" rmdir /s /q "dist\win-unpacked"
+if exist "dist\builder-effective-config.yaml" del /f /q "dist\builder-effective-config.yaml"
+if exist "dist\builder-debug.yml" del /f /q "dist\builder-debug.yml"
+if exist "dist\latest.yml" del /f /q "dist\latest.yml"
+
 echo.
 echo Build complete.
-echo Standalone application: dist\EasyPeasyHammer.exe
+echo Give your friend this file:
+echo dist\EasyPeasyHammer.exe
 goto done
 
 :error
