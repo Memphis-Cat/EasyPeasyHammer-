@@ -85,6 +85,15 @@ body.eph-camera-pan .three-viewport canvas {
   height: 16px !important;
 }
 
+.tree-eye {
+  font-size: 15px !important;
+}
+
+.eph-window-controls button {
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
 .asset-card.eph-adding {
   border-color: #767a82 !important;
   background: #1b1d21 !important;
