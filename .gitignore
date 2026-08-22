@@ -1,6 +1,7 @@
 # byanca
 node_modules/
 dist/
+.runtime/
 backend/**/bin/
 backend/**/obj/
 *.log
