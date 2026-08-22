@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
@@ -24,7 +24,7 @@
     "appId": "com.memphiscat.easypeasyhammer",
     "productName": "EasyPeasyHammer",
     "artifactName": "EasyPeasyHammer.exe",
-    "asar": true,
+    "asar": false,
     "electronDist": ".runtime/electron-dist",
     "files": [
       "launcher.js",
@@ -36,6 +36,8 @@
       "collab-network.js",
       "src/**/*",
       "assets/**/*",
+      "node_modules/three/**/*",
+      "node_modules/ws/**/*",
       "package.json"
     ],
     "extraResources": [
