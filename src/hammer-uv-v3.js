@@ -41,7 +41,11 @@ if (VMAP && !VMAP.__ephVrfUvPatch) {
   VMAP.__ephVrfUvPatch = true;
 
   const oldAddPart = VMAP.addPart.bind(VMAP);
-  VMAP.addPart = (doc, options = {}) => applyVrfUvs(oldAddPart(doc, options));
+  VMAP.addPart = (doc, options = {}) => {
+    const object = applyVrfUvs(oldAddPart(doc, options));
+    VMAP.applyObjectToDocument(doc, object);
+    return object;
+  };
 
   const oldExtract = VMAP.extractObjects.bind(VMAP);
   VMAP.extractObjects = doc => oldExtract(doc).map(object => object?.type === 'part' ? applyVrfUvs(object) : object);
