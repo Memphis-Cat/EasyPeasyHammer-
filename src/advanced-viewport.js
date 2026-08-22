@@ -1,5 +1,6 @@
 // byanca
 import * as THREE from 'three';
+globalThis.THREE = THREE;
 
 const FACE_ORDER = ['right', 'left', 'front', 'back', 'top', 'bottom'];
 
@@ -75,10 +76,7 @@ function install(viewport) {
     const brightness = Math.max(0, Number(props.brightness ?? props.intensity ?? 300));
     const range = Math.max(16, Number(props.range ?? props.distance ?? 512));
 
-    const marker = new THREE.Mesh(
-      new THREE.SphereGeometry(9, 14, 10),
-      new THREE.MeshBasicMaterial({ color })
-    );
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(9, 14, 10), new THREE.MeshBasicMaterial({ color }));
     marker.userData.ephLightMarker = true;
     group.add(marker);
 
@@ -94,10 +92,7 @@ function install(viewport) {
       const light = new THREE.PointLight(color, Math.max(.05, brightness / 120), range, 2);
       light.castShadow = String(props.castshadows ?? '1') !== '0';
       group.add(light);
-      const ring = new THREE.Mesh(
-        new THREE.SphereGeometry(range, 20, 12),
-        new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: .055, depthWrite: false })
-      );
+      const ring = new THREE.Mesh(new THREE.SphereGeometry(range, 20, 12), new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: .055, depthWrite: false }));
       ring.userData.ephLightRange = true;
       group.add(ring);
     }
