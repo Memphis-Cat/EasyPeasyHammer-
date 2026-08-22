@@ -123,3 +123,10 @@
   const fileNew = document.querySelector('.dropdown-menu [data-action="new-project"]');
   if (fileNew) fileNew.onclick = open;
 })();
+
+if (!document.querySelector('script[data-eph-interaction-pass]')) {
+  const interactionPass = document.createElement('script');
+  interactionPass.src = 'interaction-pass.js';
+  interactionPass.dataset.ephInteractionPass = '1';
+  document.body.appendChild(interactionPass);
+}
