@@ -7,6 +7,7 @@
   <title>EasyPeasyHammer</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="phase3.css" />
+  <link rel="stylesheet" href="startup.css" />
   <script type="importmap">
     {
       "imports": {
@@ -177,9 +178,11 @@
 
   <div id="newProjectModal" class="modal-backdrop hidden">
     <div class="modal-card">
-      <h2>Create new project</h2><label>Project name</label><input id="newProjectName" type="text" maxlength="80" placeholder="awp_my_map" />
-      <p>An editable .vmap will be created in the folder you choose.</p>
-      <div class="modal-actions"><button id="cancelCreateButton" class="secondary-button">Cancel</button><button id="confirmCreateButton" class="primary-button">Choose folder &amp; create</button></div>
+      <h2>Create new project</h2>
+      <label for="newProjectName">Project name</label>
+      <input id="newProjectName" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="awp_my_map" />
+      <p>The project is created immediately in <strong>Projects</strong> beside EasyPeasyHammer.</p>
+      <div class="modal-actions"><button id="cancelCreateButton" class="secondary-button">Cancel</button><button id="confirmCreateButton" class="primary-button">Create project</button></div>
     </div>
   </div>
   <div id="toast" class="toast hidden"></div>
@@ -193,5 +196,7 @@
 <script src="vmap.js"></script>
 <script type="module" src="viewport3d.js"></script>
 <script src="renderer.js"></script>
+<script src="theme.js"></script>
+<script src="project-dialog.js"></script>
 </body>
 </html>
