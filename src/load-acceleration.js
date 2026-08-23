@@ -6,6 +6,7 @@
   const originalLoadProject = loadProject;
 
   async function collectModels(project, ui) {
+    if (project?.ephSkipModelWarmup || project?.ephReadOnlySource) return [];
     let source = ui?.vmapText || '';
     if (!source && project?.vmapPath) {
       try {
