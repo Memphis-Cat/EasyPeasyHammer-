@@ -93,6 +93,8 @@ check(!bundler.includes('options.entryPoints = [source]'), 'Enhancement bundles 
 const projectDialog = read('src/project-dialog.js');
 check(projectDialog.includes('EPH_RUNTIME_READY'), 'Renderer startup must expose one deterministic readiness promise.');
 check(projectDialog.includes('BASE_PASSES') && projectDialog.includes('LATE_PASSES'), 'All runtime passes must be owned by the single project-dialog sequence.');
+check(projectDialog.includes("'viewport-layout-integrity-v35.js'"), 'Zero-height viewport recovery must load in the deterministic runtime sequence.');
+check(projectDialog.indexOf("'viewport-layout-integrity-v35.js'") < projectDialog.indexOf("'render-core-integrity-v34.js'"), 'Viewport layout recovery must load before the final render integrity guard.');
 check(projectDialog.includes("'render-core-integrity-v34.js'"), 'Final render integrity pass must load after renderer enhancements.');
 
 const startupFix = read('src/startup-interaction-fix.js');
@@ -102,6 +104,18 @@ check(!startupFix.includes("loadPass('"), 'startup-interaction-fix still contain
 const visualClean = read('src/visual-clean-v16.js');
 check(!/threeViewport[^\n]*background\s*:\s*#000/i.test(visualClean), 'The WebGL viewport must not be masked by a forced pure-black CSS background.');
 check(!/scene\.background\s*=\s*new\s+THREE\.Color\(0x000000\)/.test(visualClean), 'Visual cleanup must not force a pure-black scene.');
+
+const uiFixes = read('src/ui-fixes.css');
+check(uiFixes.includes('#editorScreen.editor-screen'), 'The UI stylesheet must own an explicit editor height contract.');
+check(uiFixes.includes('grid-template-rows: auto minmax(0, 1fr) 36px'), 'The editor middle row must have a zero intrinsic minimum so it cannot collapse after hidden startup.');
+check(uiFixes.includes('#editorScreen .workspace-column') && uiFixes.includes('height: 100% !important'), 'The workspace must inherit a concrete editor height.');
+
+const viewportLayout = read('src/viewport-layout-integrity-v35.js');
+for (const marker of ['forceVerticalContract', 'chainState', 'drawingBuffer', 'Recovered a zero-size editor viewport', 'Viewport layout is still zero-sized after forced recovery']) {
+  check(viewportLayout.includes(marker), `Viewport Layout V35 is missing ${marker}.`);
+}
+check(viewportLayout.includes("grid-template-rows: auto minmax(0, 1fr) 36px"), 'Viewport Layout V35 must enforce the non-collapsing editor grid.');
+check(viewportLayout.includes("window.addEventListener('resize'"), 'Viewport Layout V35 must recover after window resizing.');
 
 const renderCore = read('src/render-core-integrity-v34.js');
 for (const marker of ['validCameraState', 'ensureSize', 'ensureScene', 'ensureRoot', 'authoritativeNormalMapRebuild', 'webglcontextlost', 'focusSelected']) {
