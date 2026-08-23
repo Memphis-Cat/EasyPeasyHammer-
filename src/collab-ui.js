@@ -7,6 +7,7 @@
 
   const api = window.easyPeasyHammer;
   let username = 'You';
+  const activeSounds = new Set();
   api.getProfile?.().then(result => { username = result?.profile?.username || 'You'; window.EPH_COLLAB_RENDER?.(); }).catch(() => {});
 
   function escHtml(value) {
@@ -71,8 +72,14 @@
 
   window.EPH_COLLAB_RENDER = renderCollaborators;
   window.EPH_COLLAB_NOTIFY = async () => {
-    if (!document.hasFocus()) return;
     try { if (await api.isCollaboratorChatFocused?.()) return; } catch {}
-    if (window.EPH_BELL1) new Audio(window.EPH_BELL1).play().catch(() => {});
+    if (!window.EPH_BELL1) return;
+    const sound = new Audio(window.EPH_BELL1);
+    sound.volume = 1;
+    activeSounds.add(sound);
+    const release = () => activeSounds.delete(sound);
+    sound.addEventListener('ended', release, { once: true });
+    sound.addEventListener('error', release, { once: true });
+    sound.play().catch(release);
   };
 })();
