@@ -137,6 +137,7 @@
   loadPass('fgd-editor-model-guard-v18.js', '__ephFgdEditorModelGuardV18');
   loadPass('entity-fidelity-v18.js', '__ephEntityFidelityV18');
   loadPass('map-local-assets-v19.js', '__ephMapLocalAssetsV19');
+  loadPass('render-performance-v20.js', '__ephRenderPerformanceV20');
   loadPass('large-map-bootstrap-v18.js', '__ephLargeMapBootstrapV18');
 
   repair();
