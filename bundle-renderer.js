@@ -19,24 +19,38 @@ const entries = [
   ['collab-visuals.js', 'collab-visuals.bundle.js', false]
 ];
 
-function exposeViewportThree(sourceText) {
+function exposeViewportRuntime(sourceText) {
   const matches = [...sourceText.matchAll(/^import\s+.*?;\s*$/gm)];
   const last = matches.at(-1);
-  if (!last) return sourceText;
+  if (!last) throw new Error('viewport3d.js has no imports to anchor the shared Three runtime.');
   const at = last.index + last[0].length;
-  return `${sourceText.slice(0, at)}\nwindow.EPH_THREE = THREE;\nwindow.THREE = THREE;\n${sourceText.slice(at)}`;
+  const expose = [
+    'window.EPH_THREE = THREE;',
+    'window.THREE = THREE;',
+    'window.EPH_THREE_HELPERS = { cloneSkeleton };',
+  ].join('\n');
+  return `${sourceText.slice(0, at)}\n${expose}\n${sourceText.slice(at)}`;
 }
 
-async function bundleOne(sourceName, outputName, guardViewport) {
+function useSharedViewportThree(sourceText, sourceName) {
+  let output = sourceText
+    .replace(/^import\s+\*\s+as\s+THREE\s+from\s+['"]three['"];\s*$/gm, 'const THREE = window.EPH_THREE || window.THREE;')
+    .replace(/^import\s+\{\s*clone\s+as\s+cloneSkeleton\s*\}\s+from\s+['"]three\/addons\/utils\/SkeletonUtils\.js['"];\s*$/gm, 'const cloneSkeleton = window.EPH_THREE_HELPERS?.cloneSkeleton;');
+
+  const remainingThreeImports = [...output.matchAll(/^import\s+.*?from\s+['"]three(?:\/[^'"]*)?['"];\s*$/gm)];
+  if (remainingThreeImports.length) {
+    throw new Error(`${sourceName} still imports a private Three.js module: ${remainingThreeImports.map(match => match[0].trim()).join(', ')}`);
+  }
+  return output;
+}
+
+async function bundleOne(sourceName, outputName, isViewport) {
   const source = path.join(sourceRoot, sourceName);
   const outfile = path.join(outputRoot, outputName);
-  const banner = guardViewport ? '// byanca\nif (!window.EPH3D) {' : '// byanca';
-  // Some older enhancement sources assign globalThis.THREE to their own bundled
-  // copy. Restore the actual viewport instance after every enhancement bundle so
-  // late compatibility passes never bind to a different Three.js instance.
-  const footer = guardViewport ? '}' : 'window.THREE = window.EPH_THREE || window.THREE;';
+  const rawSource = fs.readFileSync(source, 'utf8');
+  const contents = isViewport ? exposeViewportRuntime(rawSource) : useSharedViewportThree(rawSource, sourceName);
 
-  const options = {
+  await esbuild.build({
     outfile,
     bundle: true,
     format: 'iife',
@@ -45,24 +59,21 @@ async function bundleOne(sourceName, outputName, guardViewport) {
     sourcemap: false,
     minify: false,
     legalComments: 'none',
-    banner: { js: banner },
-    footer: { js: footer },
-    logLevel: 'silent'
-  };
-
-  if (guardViewport) {
-    options.stdin = {
-      contents: exposeViewportThree(fs.readFileSync(source, 'utf8')),
+    banner: { js: isViewport ? '// byanca\nif (!window.EPH3D) {' : '// byanca' },
+    footer: { js: isViewport ? '}' : '' },
+    logLevel: 'silent',
+    stdin: {
+      contents,
       resolveDir: sourceRoot,
       sourcefile: sourceName,
       loader: 'js'
-    };
-  } else {
-    options.entryPoints = [source];
+    }
+  });
+
+  const built = fs.readFileSync(outfile, 'utf8');
+  if (!isViewport && /Multiple instances of Three\.js|REVISION\s*=/.test(built)) {
+    throw new Error(`${outputName} appears to contain a private Three.js runtime.`);
   }
-
-  await esbuild.build(options);
-
   const stat = fs.statSync(outfile);
   console.log(`Bundled ${sourceName} -> ${path.relative(root, outfile)} (${Math.round(stat.size / 1024)} KB)`);
 }
@@ -70,13 +81,10 @@ async function bundleOne(sourceName, outputName, guardViewport) {
 async function main() {
   fs.rmSync(outputRoot, { recursive: true, force: true });
   fs.mkdirSync(outputRoot, { recursive: true });
-
   for (const entry of entries) await bundleOne(...entry);
-
   const missing = entries.map(([, outputName]) => path.join(outputRoot, outputName)).filter(file => !fs.existsSync(file));
   if (missing.length) throw new Error(`Renderer bundle output missing: ${missing.join(', ')}`);
-
-  console.log('EasyPeasyHammer renderer bundles ready.');
+  console.log('EasyPeasyHammer renderer bundles ready (single shared Three.js runtime).');
 }
 
 main().catch(error => {
