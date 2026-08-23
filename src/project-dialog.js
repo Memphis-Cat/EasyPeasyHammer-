@@ -172,6 +172,7 @@ async function ensureViewportBundle() {
 
 (async () => {
   await safeLoadPass('vmap-compat-v9.js', 'ephVmapCompatV9');
+  await safeLoadPass('vmap-helper-compat-v9.js', 'ephVmapHelperCompatV9');
   await safeLoadPass('interaction-pass.js', 'ephInteractionPass');
   await ensureViewportBundle();
   await safeLoadPass('bundled/advanced-viewport.bundle.js', 'ephAdvancedViewportBundle');
