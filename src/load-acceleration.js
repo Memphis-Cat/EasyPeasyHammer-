@@ -9,11 +9,17 @@
     let source = ui?.vmapText || '';
     if (!source && project?.vmapPath) {
       try {
+        const inspection = await api.inspectVmap?.(project.vmapPath);
+        // Binary maps need dmxconvert and may expand to hundreds of MB. Model
+        // warmup is optional, so never decode/parse them once here and then a
+        // second time in the real loader.
+        if (inspection?.ok && (inspection.encoding === 'binary' || Number(inspection.size) > 32 * 1024 * 1024)) return [];
         const result = await api.loadVmap(project.vmapPath);
         if (result?.ok) source = result.text || '';
       } catch {}
     }
     if (!source) return [];
+    if (source.length > 32 * 1024 * 1024) return [];
 
     try {
       const doc = VMAP.parse(source);
