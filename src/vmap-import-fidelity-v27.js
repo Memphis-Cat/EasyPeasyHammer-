@@ -56,12 +56,9 @@
     if (element?.className !== 'CMapMesh') return;
     const meshData = elementValue(element, 'meshData');
     if (!meshData) return;
-
     const loops = meshFaceLoops(meshData);
     if (!loops.length) return;
 
-    // Source 2 faces address faceData through faceDataIndices. Imported maps do
-    // not guarantee that face i == faceData row i.
     const faceRows = arrayValue(meshData, 'faceDataIndices').map(value => number(value, -1));
     const materialList = arrayValue(meshData, 'materials').map(String);
     const faceData = elementValue(meshData, 'faceData');
@@ -93,9 +90,6 @@
     if (textureAxesU.some(Boolean)) object.faceTextureAxisU = textureAxesU;
     if (textureAxesV.some(Boolean)) object.faceTextureAxisV = textureAxesV;
 
-    // Preserve Hammer's real face-corner UV stream. The old renderer threw this
-    // away and generated a planar 1/128 projection, which is visibly wrong on
-    // decompiled Valve maps such as Anubis.
     const faceVertexData = elementValue(meshData, 'faceVertexData');
     const texcoords = arrayValue(stream(faceVertexData, 'texcoord:0'), 'data');
     if (texcoords.length) {
@@ -108,19 +102,37 @@
     object.ephSourceFaceData = true;
   }
 
-  const rawExtract = VMAP.extractObjects.bind(VMAP);
-  const wrappedExtract = function(doc, ...args) {
-    const objects = rawExtract(doc, ...args);
-    for (const object of objects || []) {
-      try { enrichPart(doc, object); }
-      catch (error) { console.warn('[Import Fidelity V27] Could not enrich imported CMapMesh.', object?.dmxId, error); }
+  let installedFunction = null;
+  function install() {
+    if (!VMAP?.extractObjects) return false;
+    if (VMAP.extractObjects.__ephImportFidelityV27) {
+      installedFunction = VMAP.extractObjects;
+      return true;
     }
-    return objects;
-  };
-  wrappedExtract.__ephImportFidelityV27 = true;
-  wrappedExtract.__ephPrevious = rawExtract;
-  VMAP.extractObjects = wrappedExtract;
+    const rawExtract = VMAP.extractObjects.bind(VMAP);
+    const wrappedExtract = function(doc, ...args) {
+      const objects = rawExtract(doc, ...args);
+      for (const object of objects || []) {
+        try { enrichPart(doc, object); }
+        catch (error) { console.warn('[Import Fidelity V27] Could not enrich imported CMapMesh.', object?.dmxId, error); }
+      }
+      return objects;
+    };
+    wrappedExtract.__ephImportFidelityV27 = true;
+    wrappedExtract.__ephPrevious = rawExtract;
+    VMAP.extractObjects = wrappedExtract;
+    installedFunction = wrappedExtract;
+    console.info('[Import Fidelity V27] Source 2 faceDataIndices, materials and texcoord:0 UVs are preserved.');
+    return true;
+  }
 
-  window.EPH_IMPORT_FIDELITY_V27 = { enrichPart };
-  console.info('[Import Fidelity V27] Source 2 faceDataIndices, materials and texcoord:0 UVs are preserved.');
+  install();
+  // vmap-compat-v9 loads asynchronously and replaces extractObjects once. Recheck
+  // only at bounded startup points so the final compatibility extractor is
+  // enriched too, without introducing another forever-wrapper loop.
+  [500, 1500, 3000].forEach(delay => setTimeout(() => {
+    if (VMAP.extractObjects !== installedFunction) install();
+  }, delay));
+
+  window.EPH_IMPORT_FIDELITY_V27 = { enrichPart, install };
 })();
