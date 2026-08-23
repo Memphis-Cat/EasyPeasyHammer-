@@ -8,7 +8,6 @@
   const DEG = 180 / Math.PI;
   const CONVENTION = 'source2-qangle-yzx-v23';
   let viewportInstalled = null;
-  let loadProjectWrapped = null;
 
   const THREE_NOW = () => window.EPH_THREE || window.THREE;
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -119,10 +118,7 @@
   }
 
   function isLegacyEphProject(project) {
-    if (!project || project.rotationConvention === CONVENTION) return false;
-    if (project.type === 'new-project') return true;
-    const path = String(project.vmapPath || '').replace(/\\/g, '/');
-    return /\/Projects\/[^/]+\/[^/]+\.vmap$/i.test(path) && /EasyPeasyHammer|dist\/Projects/i.test(path);
+    return Boolean(project && project.type === 'new-project' && project.rotationConvention !== CONVENTION);
   }
 
   function migrateLegacyProject(project) {
@@ -160,7 +156,6 @@
     wrapped.__ephPrevious = raw;
     loadProject = wrapped;
     window.loadProject = wrapped;
-    loadProjectWrapped = wrapped;
     return true;
   }
 
@@ -169,7 +164,8 @@
   function installDecalCreationBridge() {
     const VMAP = window.EPH_VMAP;
     if (!VMAP?.addPart || chainHas(VMAP.addPart, '__ephSource2DecalV23')) return Boolean(VMAP?.addPart);
-    const raw = VMAP.addPart.bind(VMAP);
+    const previous = VMAP.addPart;
+    const raw = previous.bind(VMAP);
     const wrapped = function(doc, options = {}) {
       if (/^EPH_DECAL_/i.test(String(options?.meshName || '')) && Array.isArray(options.rotation)) {
         options = { ...options, rotation: legacyEulerToQAngle(options.rotation) };
@@ -177,7 +173,7 @@
       return raw(doc, options);
     };
     wrapped.__ephSource2DecalV23 = true;
-    wrapped.__ephPrevious = VMAP.addPart;
+    wrapped.__ephPrevious = previous;
     VMAP.addPart = wrapped;
     return true;
   }
