@@ -88,6 +88,7 @@
   loadPass('render-performance-v20.js', '__ephRenderPerformanceV20');
   loadPass('entity-runtime-v21.js', '__ephEntityRuntimeV21');
   loadPass('scale-tool-v21.js', '__ephScaleToolV21');
+  loadPass('scale-legacy-disable-v21.js', '__ephScaleLegacyDisableV21');
   loadPass('large-map-bootstrap-v21.js', '__ephLargeMapBootstrapV21');
 
   repair();
