@@ -35,6 +35,9 @@ registerEntityFgdServiceV18({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerLargeMapService } = require('./large-map-service');
 registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
 
+const { registerLargeMapSpatialServiceV19 } = require('./large-map-spatial-service-v19');
+registerLargeMapSpatialServiceV19({ ipcMain: electron.ipcMain, app: electron.app });
+
 const { registerProjectNameService } = require('./project-name-service');
 registerProjectNameService({ ipcMain: electron.ipcMain, app: electron.app });
 
