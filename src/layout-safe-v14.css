@@ -1,0 +1,40 @@
+/* byanca */
+/* Keep the original fixed editor grid. Only the inner tool rail can collapse. */
+.left-panel.eph-toolrail-hidden {
+  grid-template-columns: minmax(0, 1fr) 0 !important;
+}
+.left-panel.eph-toolrail-hidden #toolRail {
+  display: none !important;
+}
+.left-panel.eph-toolrail-hidden .asset-browser {
+  border-right: 0;
+}
+
+.eph-toolrail-toggle-safe {
+  position: absolute;
+  top: 7px;
+  right: 63px;
+  z-index: 25;
+  width: 18px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #343b46;
+  border-radius: 4px;
+  background: #171b21;
+  color: #9da6b1;
+  cursor: pointer;
+  line-height: 1;
+}
+.left-panel.eph-toolrail-hidden .eph-toolrail-toggle-safe {
+  right: 4px;
+}
+.eph-toolrail-toggle-safe:hover {
+  color: #fff;
+  background: #232933;
+  border-color: #46515f;
+}
+
+/* A small fixed shift only; this does not participate in editor layout sizing. */
+.eph-floating-chat {
+  right: 56px !important;
+}
