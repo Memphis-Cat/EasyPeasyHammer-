@@ -6,12 +6,14 @@ set "EXIT_CODE=0"
 
 if not exist "node_modules\electron\package.json" goto missingpackage
 
+set "ELECTRON_VERSION="
 for /f "usebackq delims=" %%V in (`node -p "require('./node_modules/electron/package.json').version" 2^>nul`) do set "ELECTRON_VERSION=%%V"
 if not defined ELECTRON_VERSION goto noversion
 
 set "ELECTRON_ARCH=x64"
 set "RUNTIME_ROOT=%~dp0.runtime"
 set "RUNTIME_DIR=%RUNTIME_ROOT%\electron"
+set "RUNTIME_VERSION_FILE=%RUNTIME_DIR%\.eph-version"
 set "DIST_DIR=%RUNTIME_ROOT%\electron-dist"
 set "ZIP_NAME=electron-v%ELECTRON_VERSION%-win32-%ELECTRON_ARCH%.zip"
 set "ZIP_PATH=%DIST_DIR%\%ZIP_NAME%"
@@ -19,8 +21,14 @@ set "PART_PATH=%ZIP_PATH%.part"
 set "OFFICIAL_URL=https://github.com/electron/electron/releases/download/v%ELECTRON_VERSION%/%ZIP_NAME%"
 set "MIRROR_URL=https://npmmirror.com/mirrors/electron/v%ELECTRON_VERSION%/%ZIP_NAME%"
 
-if exist "%RUNTIME_DIR%\electron.exe" goto ready
+set "RUNTIME_VERSION="
+if exist "%RUNTIME_VERSION_FILE%" set /p RUNTIME_VERSION=<"%RUNTIME_VERSION_FILE%"
+if exist "%RUNTIME_DIR%\electron.exe" if /i "%RUNTIME_VERSION%"=="%ELECTRON_VERSION%" goto ready
 
+if exist "%RUNTIME_DIR%" (
+    echo Electron runtime version changed or is incomplete. Rebuilding runtime...
+    rmdir /s /q "%RUNTIME_DIR%"
+)
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 
 if not exist "%ZIP_PATH%" (
@@ -36,9 +44,7 @@ if not exist "%ZIP_PATH%" (
 
 if not exist "%ZIP_PATH%" goto downloaderror
 
-if exist "%RUNTIME_DIR%" rmdir /s /q "%RUNTIME_DIR%"
 mkdir "%RUNTIME_DIR%"
-
 set "EPH_ZIP_PATH=%ZIP_PATH%"
 set "EPH_RUNTIME_DIR=%RUNTIME_DIR%"
 echo Extracting Electron runtime...
@@ -46,6 +52,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='
 if errorlevel 1 goto extracterror
 
 if not exist "%RUNTIME_DIR%\electron.exe" goto extracterror
+>"%RUNTIME_VERSION_FILE%" echo %ELECTRON_VERSION%
 
 :ready
 echo Electron runtime ready: %RUNTIME_DIR%\electron.exe
@@ -73,7 +80,9 @@ goto error
 echo.
 echo Electron ZIP downloaded, but Windows could not extract a usable electron.exe.
 echo ZIP: %ZIP_PATH%
-echo Check Windows Defender or another antivirus quarantine/history.
+echo The cached ZIP will be deleted so the next run downloads a fresh copy.
+if exist "%RUNTIME_DIR%" rmdir /s /q "%RUNTIME_DIR%"
+if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%" >nul 2>nul
 goto error
 
 :error
