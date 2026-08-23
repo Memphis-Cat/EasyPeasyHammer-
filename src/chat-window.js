@@ -14,6 +14,7 @@
   let replyTo = null;
   let pickedFile = null;
   let transferClearTimer = null;
+  let followBottom = true;
   const rendered = new Set();
 
   const fmtBytes = bytes => {
@@ -23,6 +24,20 @@
     if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
     return `${n} B`;
   };
+
+  const nearBottom = () => messages.scrollHeight - messages.scrollTop - messages.clientHeight < 64;
+  function scrollBottom(force = false) {
+    if (!force && !followBottom) return;
+    followBottom = true;
+    const apply = () => { if (followBottom) messages.scrollTop = messages.scrollHeight; };
+    apply();
+    requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });
+    [50, 140, 320].forEach(delay => setTimeout(apply, delay));
+  }
+  messages.addEventListener('scroll', event => {
+    if (event.isTrusted) followBottom = nearBottom();
+  }, { passive: true });
+  new ResizeObserver(() => scrollBottom(false)).observe(messages);
 
   function messageById(id) { return state.chatHistory?.find(x => x.id === id) || null; }
   function textNode(tag, text, className = '') {
@@ -46,6 +61,8 @@
     try {
       const result = await api.collabAttachmentData?.(attachment.localPath, attachment.size);
       if (result?.ok && result.dataUrl) {
+        image.addEventListener('load', () => scrollBottom(false), { once: true });
+        image.addEventListener('error', () => scrollBottom(false), { once: true });
         image.src = result.dataUrl;
         image.classList.remove('chat-image-failed');
         return;
@@ -59,6 +76,7 @@
   }
   function renderMessage(message) {
     if (!message?.id || rendered.has(message.id)) return;
+    const shouldFollow = followBottom || nearBottom();
     rendered.add(message.id);
     const article = document.createElement('article');
     article.className = `chat-message${message.peerId === state.peerId ? ' own' : ''}`;
@@ -107,13 +125,14 @@
       article.appendChild(card);
     }
     messages.appendChild(article);
-    messages.scrollTop = messages.scrollHeight;
+    if (shouldFollow) scrollBottom(true);
   }
   function renderAll() {
     messages.replaceChildren();
     rendered.clear();
     for (const message of state.chatHistory || []) renderMessage(message);
     renderPeople();
+    scrollBottom(true);
   }
   function clearReply() {
     replyTo = null;
@@ -142,8 +161,6 @@
     if (!result.ok) { showTransfer(result.error || 'Could not attach file.', true); return; }
     pickedFile = result;
     fileDraft.replaceChildren();
-    // Do not point the sandboxed renderer at a file:// URL. The selected file
-    // is shown by name here; received/sent chat images use the safe IPC preview.
     fileDraft.appendChild(textNode('span', `${result.name} • ${fmtBytes(result.size)}`));
     const remove = textNode('button', '×');
     remove.type = 'button';
