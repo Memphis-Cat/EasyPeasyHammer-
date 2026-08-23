@@ -120,18 +120,17 @@
     if (window[marker] || document.querySelector(`script[data-eph-pass="${src}"]`)) return;
     const script = document.createElement('script');
     script.src = src;
+    script.async = false;
     script.dataset.ephPass = src;
     script.onerror = () => console.error(`EasyPeasyHammer pass failed: ${src}`);
     document.body.appendChild(script);
   }
 
-  // These are lightweight late passes. Loading them here keeps the large
-  // project-dialog enhancement chain untouched and prevents another startup
-  // regression from a giant loader rewrite.
   loadPass('large-map-stream-v16.js', '__ephLargeMapStreamV16');
   loadPass('visual-clean-v16.js', '__ephVisualCleanV16');
   loadPass('project-name-guard-v16.js', '__ephProjectNameGuardV16');
   loadPass('diagnostics-v16.js', '__ephDiagnosticsV16');
+  loadPass('entity-fidelity-v17.js', '__ephEntityFidelityV17');
 
   repair();
   requestAnimationFrame(repair);
