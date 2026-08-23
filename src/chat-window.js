@@ -27,6 +27,16 @@
     const users = state.users || [];
     people.textContent = state.connected ? `${users.length || 1} connected` : 'Disconnected';
   }
+  async function hydrateImage(image, attachment) {
+    if (!image || !attachment) return;
+    if (attachment.localPath && api.collabAttachmentData) {
+      try {
+        const result = await api.collabAttachmentData(attachment.localPath);
+        if (result?.ok && result.dataUrl) { image.src = result.dataUrl; return; }
+      } catch {}
+    }
+    if (attachment.url) image.src = attachment.url;
+  }
   function renderMessage(message) {
     if (!message?.id || rendered.has(message.id)) return;
     rendered.add(message.id);
@@ -41,17 +51,33 @@
     if (message.text) article.appendChild(textNode('div', message.text, 'chat-text'));
     if (message.attachment) {
       const card = document.createElement('div'); card.className = 'chat-file-card';
-      if (message.attachment.mime?.startsWith('image/') && message.attachment.url) {
-        const image = document.createElement('img'); image.className = 'chat-image-preview'; image.src = message.attachment.url; image.alt = message.attachment.name || 'Image'; card.appendChild(image);
+      if (message.attachment.mime?.startsWith('image/')) {
+        const image = document.createElement('img');
+        image.className = 'chat-image-preview';
+        image.alt = message.attachment.name || 'Image';
+        card.appendChild(image);
+        hydrateImage(image, message.attachment);
       }
       const info = document.createElement('div'); info.className = 'chat-file-info';
       const label = textNode('span', `${message.attachment.name || 'file'} • ${fmtBytes(message.attachment.size)}`);
       info.appendChild(label);
       if (message.attachment.localPath) {
         const save = textNode('button', 'Save'); save.type = 'button';
-        save.onclick = () => api.collabSaveFile(message.attachment.localPath, message.attachment.name);
+        save.onclick = async () => {
+          save.disabled = true;
+          try {
+            const result = await api.collabSaveFile(message.attachment.localPath, message.attachment.name);
+            if (!result?.ok && !result?.canceled) fileDraft.textContent = result?.error || 'Could not save attachment.';
+          } finally { save.disabled = false; }
+        };
         const show = textNode('button', 'Show'); show.type = 'button';
-        show.onclick = () => api.collabShowFile(message.attachment.localPath);
+        show.onclick = async () => {
+          show.disabled = true;
+          try {
+            const result = await api.collabShowFile(message.attachment.localPath);
+            if (!result?.ok) fileDraft.textContent = result?.error || 'Could not show attachment.';
+          } finally { show.disabled = false; }
+        };
         info.append(save, show);
       }
       card.appendChild(info); article.appendChild(card);
