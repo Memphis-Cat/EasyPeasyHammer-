@@ -194,7 +194,9 @@ async function ensureViewportBundle() {
   await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
   await safeLoadPass('collab-terrain-live-v8.js', 'ephCollabTerrainLiveV8');
   await safeLoadPass('collab-camera-v6.js', 'ephCollabCameraV6');
+  await safeLoadPass('vmap-finalize-v10.js', 'ephVmapFinalizeV10');
   await safeLoadPass('bundled/collab-visuals.bundle.js', 'ephCollabVisualsBundle');
   await safeLoadPass('bell1.js', 'ephBell1');
   await safeLoadPass('collab-ui.js', 'ephCollabUi');
+  await safeLoadPass('save-guard-v10.js', 'ephSaveGuardV10');
 })();
