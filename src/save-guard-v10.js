@@ -23,7 +23,29 @@
     console.error(`EasyPeasyHammer ${action.toLowerCase()} blocked`, error);
   }
 
+  async function launchWorkshopTools() {
+    try {
+      const result = await window.easyPeasyHammer.openWorkshopTools();
+      if (result?.ok) {
+        try { window.toast?.('CS2 Workshop Tools launched'); } catch {}
+        try { window.log?.('Launched CS2 Workshop Tools. Open the source VMAP in Hammer.', 'success'); } catch {}
+        return true;
+      }
+      const message = result?.error || 'Workshop Tools could not be launched';
+      try { window.toast?.(message); } catch {}
+      try { window.log?.(message, 'warning'); } catch {}
+      return false;
+    } catch (error) {
+      report(error, 'Open in Hammer');
+      return false;
+    }
+  }
+
   async function guardedSave(show = true) {
+    if (S.project?.ephReadOnlySource) {
+      report(new Error('This is a Large Map Compatibility preview. The original Hammer VMAP is read-only here so deferred geometry cannot be accidentally destroyed.'), 'Save');
+      return false;
+    }
     if (saving) return false;
     saving = true;
     const status = $('autosaveStatus');
@@ -49,26 +71,13 @@
   }
 
   async function guardedOpenHammer() {
+    if (S.project?.ephReadOnlySource) return launchWorkshopTools();
     const ok = await guardedSave(false);
     if (!ok) {
       try { window.toast?.('Hammer was not opened because the VMAP did not save safely.'); } catch {}
       return false;
     }
-    try {
-      const result = await window.easyPeasyHammer.openWorkshopTools();
-      if (result?.ok) {
-        try { window.toast?.('CS2 Workshop Tools launched'); } catch {}
-        try { window.log?.('Launched CS2 Workshop Tools. Open the saved VMAP in Hammer.', 'success'); } catch {}
-        return true;
-      }
-      const message = result?.error || 'Workshop Tools could not be launched';
-      try { window.toast?.(message); } catch {}
-      try { window.log?.(message, 'warning'); } catch {}
-      return false;
-    } catch (error) {
-      report(error, 'Open in Hammer');
-      return false;
-    }
+    return launchWorkshopTools();
   }
 
   window.save = guardedSave;
