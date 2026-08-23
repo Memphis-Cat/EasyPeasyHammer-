@@ -87,29 +87,23 @@
     const worldChildren = VMAP.getWorldChildren?.(doc) || [];
     const removed = removeOldHelpers(worldChildren);
     const counts = { players: 0, grenades: 0, bullets: 0, removed };
-
     for (const object of objects || []) {
       if (!object?.dmxId || !['part', 'prop'].includes(object.type)) continue;
-      if (object.blockPlayers) {
-        addHelper(doc, object, 'players', MATERIALS.players);
-        counts.players++;
-      }
-      if (object.blockGrenades) {
-        addHelper(doc, object, 'grenades', MATERIALS.grenades);
-        counts.grenades++;
-      }
-      if (object.blockBullets) {
-        addHelper(doc, object, 'bullets', MATERIALS.bullets);
-        counts.bullets++;
-      }
+      if (object.blockPlayers) { addHelper(doc, object, 'players', MATERIALS.players); counts.players++; }
+      if (object.blockGrenades) { addHelper(doc, object, 'grenades', MATERIALS.grenades); counts.grenades++; }
+      if (object.blockBullets) { addHelper(doc, object, 'bullets', MATERIALS.bullets); counts.bullets++; }
     }
-
     report('normal', 'Generated Hammer collision helper meshes.', counts);
     return doc;
   }
 
+  let installedPrepare = null;
   function installSaveExport() {
-    if (VMAP.prepareForSave?.__ephCollisionExportV25) return;
+    if (VMAP.prepareForSave?.__ephCollisionExportV25) {
+      installedPrepare = VMAP.prepareForSave;
+      VMAP.syncCollisionHelpers = exportHelpers;
+      return;
+    }
     const rawPrepare = VMAP.prepareForSave.bind(VMAP);
     const wrapped = function(doc, objects) {
       const prepared = rawPrepare(doc, objects);
@@ -119,6 +113,7 @@
     wrapped.__ephPrevious = rawPrepare;
     VMAP.prepareForSave = wrapped;
     VMAP.syncCollisionHelpers = exportHelpers;
+    installedPrepare = wrapped;
     report('normal', 'Collision helper export installed. Player/Grenade/Bullet toggles now create Hammer tool meshes on every save.');
   }
 
@@ -157,8 +152,7 @@
 
   let wrappedAddEntity = null;
   function installTriggerDefaults() {
-    if (typeof addEntity !== 'function') return;
-    if (addEntity.__ephCollisionExportV25) return;
+    if (typeof addEntity !== 'function' || addEntity.__ephCollisionExportV25) return;
     const rawAddEntity = addEntity;
     const wrapped = function(item = {}) {
       const before = new Set((S?.objects || []).map(object => object.id));
@@ -167,10 +161,7 @@
       const wrapper = (result && isTriggerClass(result.className) ? result : null)
         || (S?.objects || []).find(object => !before.has(object.id) && classKey(object?.className) === wanted && isTriggerClass(object.className))
         || (isTriggerClass(current?.()?.className) ? current() : null);
-      if (wrapper) {
-        makeTriggerPassable(wrapper);
-        renderProperties?.();
-      }
+      if (wrapper) { makeTriggerPassable(wrapper); renderProperties?.(); }
       return result;
     };
     wrapped.__ephCollisionExportV25 = true;
@@ -182,8 +173,7 @@
 
   let wrappedRenderProperties = null;
   function installPropertyExplanation() {
-    if (typeof renderProperties !== 'function') return;
-    if (renderProperties.__ephCollisionExportV25) return;
+    if (typeof renderProperties !== 'function' || renderProperties.__ephCollisionExportV25) return;
     const rawRender = renderProperties;
     const wrapped = function(...args) {
       const result = rawRender(...args);
@@ -195,7 +185,6 @@
       if (player) player.closest('.toggle-row')?.setAttribute('title', 'Exports an exact-shape toolsplayerclip Hammer mesh on Save VMAP.');
       if (grenade) grenade.closest('.toggle-row')?.setAttribute('title', 'Exports an exact-shape toolsgrenadeclip Hammer mesh on Save VMAP.');
       if (bullets) bullets.closest('.toggle-row')?.setAttribute('title', 'Exports an exact-shape toolsblockbullets_cs Hammer mesh on Save VMAP.');
-
       const title = [...host.querySelectorAll('.property-section-title')].find(element => element.textContent.trim() === 'Collision / Gameplay');
       const section = title?.closest('.property-section');
       if (section && !section.querySelector('.eph-collision-export-note-v25')) {
@@ -217,16 +206,14 @@
     installSaveExport();
     installTriggerDefaults();
     installPropertyExplanation();
-    renderProperties?.();
   }
 
   install();
-  let checks = 0;
-  const guard = setInterval(() => {
-    checks++;
-    installSaveExport();
+  // The old pass polled and rewrapped three functions every 250 ms for 15 s.
+  // Project-dialog only needs a couple of late settling checks.
+  [1000, 3000].forEach(delay => setTimeout(() => {
+    if (VMAP.prepareForSave !== installedPrepare) installSaveExport();
     if (wrappedAddEntity && addEntity !== wrappedAddEntity) installTriggerDefaults();
     if (wrappedRenderProperties && renderProperties !== wrappedRenderProperties) installPropertyExplanation();
-    if (checks >= 60) clearInterval(guard);
-  }, 250);
+  }, delay));
 })();
