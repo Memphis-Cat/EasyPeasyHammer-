@@ -31,9 +31,9 @@ class AssetHost {
   }
 
   async start() {
-    if (this.process && !this.process.killed) return true;
+    if (this.process && !this.process.killed && this.process.exitCode == null) return true;
     if (this.starting) return this.starting;
-    this.starting = new Promise((resolve) => {
+    this.starting = new Promise(resolve => {
       const launch = this.findLaunch();
       if (!launch) {
         this.lastError = 'The Source 2 asset backend is not built. Run Build_Backend.bat or Build_EXE.bat.';
@@ -42,10 +42,20 @@ class AssetHost {
         return;
       }
 
-      const child = spawn(launch.command, launch.args, { cwd: __dirname, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      this.buffer = '';
+      this.lastError = null;
+      let child;
+      try {
+        child = spawn(launch.command, launch.args, { cwd: __dirname, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+      } catch (error) {
+        this.lastError = error.message;
+        this.starting = null;
+        resolve(false);
+        return;
+      }
       this.process = child;
       let settled = false;
-      const finish = (ok) => {
+      const finish = ok => {
         if (settled) return;
         settled = true;
         this.starting = null;
@@ -53,30 +63,57 @@ class AssetHost {
       };
 
       child.stdout.setEncoding('utf8');
-      child.stdout.on('data', (chunk) => this.onData(chunk));
+      child.stdout.on('data', chunk => this.onData(chunk));
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (chunk) => { this.lastError = String(chunk).trim().slice(-2000); });
-      child.on('error', (error) => { this.lastError = error.message; this.failAll(error); finish(false); });
-      child.on('exit', (code) => {
+      child.stderr.on('data', chunk => { this.lastError = String(chunk).trim().slice(-2000); });
+      child.on('error', error => {
+        this.lastError = error.message;
+        if (this.process === child) this.process = null;
+        this.failAll(error);
+        finish(false);
+      });
+      child.on('exit', code => {
         if (code && !this.lastError) this.lastError = `Asset backend exited with code ${code}.`;
-        this.process = null;
+        if (this.process === child) this.process = null;
         this.failAll(new Error(this.lastError || 'Asset backend stopped.'));
         finish(false);
       });
 
-      const timer = setTimeout(() => finish(Boolean(this.process)), 9000);
-      this.request('ping', {}, 8000).then((r) => { clearTimeout(timer); finish(Boolean(r?.ok)); }).catch(() => { clearTimeout(timer); finish(false); });
+      const timer = setTimeout(() => {
+        this.lastError ||= 'Asset backend did not respond to its startup check.';
+        try { child.kill(); } catch {}
+        finish(false);
+      }, 9000);
+      this.request('ping', {}, 8000).then(result => {
+        clearTimeout(timer);
+        if (!result?.ok) {
+          this.lastError ||= result?.error || 'Asset backend startup check failed.';
+          try { child.kill(); } catch {}
+        }
+        finish(Boolean(result?.ok));
+      }).catch(error => {
+        clearTimeout(timer);
+        this.lastError = error.message;
+        try { child.kill(); } catch {}
+        finish(false);
+      });
     });
     return this.starting;
   }
 
   onData(chunk) {
     this.buffer += chunk;
+    if (this.buffer.length > 32 * 1024 * 1024) {
+      this.lastError = 'Asset backend produced an invalid oversized response.';
+      this.buffer = '';
+      this.failAll(new Error(this.lastError));
+      return;
+    }
     for (;;) {
-      const i = this.buffer.indexOf('\n');
-      if (i < 0) break;
-      const line = this.buffer.slice(0, i).trim();
-      this.buffer = this.buffer.slice(i + 1);
+      const index = this.buffer.indexOf('\n');
+      if (index < 0) break;
+      const line = this.buffer.slice(0, index).trim();
+      this.buffer = this.buffer.slice(index + 1);
       if (!line) continue;
       try {
         const msg = JSON.parse(line);
@@ -85,7 +122,7 @@ class AssetHost {
         this.pending.delete(String(msg.id));
         clearTimeout(pending.timer);
         pending.resolve(this.withUrl(msg.result));
-      } catch { }
+      } catch {}
     }
   }
 
@@ -96,33 +133,51 @@ class AssetHost {
   }
 
   failAll(error) {
-    for (const p of this.pending.values()) {
-      clearTimeout(p.timer);
-      p.reject(error);
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve({ ok: false, error: error?.message || 'Asset backend stopped.' });
     }
     this.pending.clear();
   }
 
   async request(command, args = {}, timeout = 30000) {
-    if ((!this.process || this.process.killed) && command !== 'ping') {
+    if ((!this.process || this.process.killed || this.process.exitCode != null) && command !== 'ping') {
       const ok = await this.start();
       if (!ok) return { ok: false, error: this.lastError || 'Asset backend unavailable.' };
     }
-    if (!this.process || this.process.killed) return { ok: false, error: this.lastError || 'Asset backend unavailable.' };
+    if (!this.process || this.process.killed || this.process.exitCode != null || !this.process.stdin?.writable) return { ok: false, error: this.lastError || 'Asset backend unavailable.' };
     const id = String(++this.counter);
-    return new Promise((resolve, reject) => {
+    return new Promise(resolve => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve({ ok: false, error: `Asset backend timed out while running ${command}.` });
       }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
-      this.process.stdin.write(`${JSON.stringify({ id, command, args })}\n`);
+      this.pending.set(id, { resolve, timer });
+      try {
+        this.process.stdin.write(`${JSON.stringify({ id, command, args })}\n`, error => {
+          if (!error) return;
+          const pending = this.pending.get(id);
+          if (!pending) return;
+          this.pending.delete(id);
+          clearTimeout(pending.timer);
+          pending.resolve({ ok: false, error: error.message });
+        });
+      } catch (error) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        resolve({ ok: false, error: error.message });
+      }
     });
   }
 
   stop() {
-    if (this.process && !this.process.killed) this.process.kill();
+    const child = this.process;
     this.process = null;
+    this.buffer = '';
+    this.failAll(new Error('Asset backend stopped.'));
+    if (child && !child.killed && child.exitCode == null) {
+      try { child.kill(); } catch {}
+    }
   }
 }
 
