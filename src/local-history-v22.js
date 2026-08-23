@@ -255,10 +255,14 @@
           continue;
         }
 
-        if (!target || !source || !current) {
-          if (target && !current) recreate(target, targetRaw?.[id] || null);
+        // This was a local edit to an existing object, but that object was
+        // deleted remotely afterwards. Never resurrect it during personal undo.
+        if (target && source && !current) {
+          conflicts.count++;
           continue;
         }
+
+        if (!target || !source || !current) continue;
 
         applyDelta(current, target, source, conflicts);
         ensureObject(current);
