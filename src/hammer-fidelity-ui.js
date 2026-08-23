@@ -115,13 +115,14 @@
   faceLabel = function(index, count) {
     const object = current();
     if (object?.type === 'part' && object.faces?.[index] && window.EPH_FIDELITY_V2?.semanticFaceName) {
-      let names = semanticNames.get(object);
-      if (!names || names.length !== object.faces.length) {
-        names = object.faces.map(face => window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, face));
-        semanticNames.set(object, names);
+      let state = semanticNames.get(object);
+      if (!state || state.names.length !== object.faces.length) {
+        const names = object.faces.map(face => window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, face));
+        state = { names, unique: new Set(names).size === names.length };
+        semanticNames.set(object, state);
       }
-      if (new Set(names).size === names.length) {
-        const name = names[index];
+      if (state.unique) {
+        const name = state.names[index];
         return name.charAt(0).toUpperCase() + name.slice(1);
       }
     }
@@ -139,6 +140,7 @@
       if (!S.objects.includes(object) || !window.EPH_TEXTURE_PROJECTION_V4) return;
       window.EPH_TEXTURE_PROJECTION_V4.setFaceMaterialInfo(object, faces, width, height);
       projectionState.delete(object);
+      semanticNames.delete(object);
       synchronizing.add(object);
       try {
         VMAP.applyObjectToDocument(S.doc, object);
