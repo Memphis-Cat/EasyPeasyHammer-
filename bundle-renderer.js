@@ -15,6 +15,7 @@ const entries = [
   ['texture-projection-v4.js', 'texture-projection-v4.bundle.js', false],
   ['editor-tools-v6.js', 'editor-tools-v6.bundle.js', false],
   ['editor-ux-v7.js', 'editor-ux-v7.bundle.js', false],
+  ['audit-fixes-v8.js', 'audit-fixes-v8.bundle.js', false],
   ['collab-visuals.js', 'collab-visuals.bundle.js', false]
 ];
 
