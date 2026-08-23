@@ -4,11 +4,116 @@
 
   const api = window.easyPeasyHammer;
   const projectActionIds = ['openVmapButton', 'createProjectButton', 'continueButton'];
+  const MIN_PART_SCALE = 0.01;
 
   function makeInteractive(element) {
     if (!element) return;
     element.style.pointerEvents = 'auto';
     element.style.webkitAppRegion = 'no-drag';
+  }
+
+  function prepareEditorButtons(root) {
+    if (!root) return;
+    const buttons = root.matches?.('button') ? [root] : [...(root.querySelectorAll?.('button') || [])];
+    for (const button of buttons) {
+      // Editor chrome is intentionally pointer-driven. Leaving a clicked button
+      // focused lets Chromium turn Q/arrows/etc. into keyboard focus/navigation
+      // and causes the orange focus selection seen in the toolbar.
+      button.tabIndex = -1;
+      button.setAttribute('tabindex', '-1');
+    }
+  }
+
+  function installEditorButtonFocusGuard() {
+    const editor = document.getElementById('editorScreen');
+    if (!editor || editor.dataset.ephButtonFocusGuard === '1') return;
+    editor.dataset.ephButtonFocusGuard = '1';
+    prepareEditorButtons(editor);
+
+    editor.addEventListener('focusin', event => {
+      const button = event.target?.closest?.('button');
+      if (button && editor.contains(button)) button.blur();
+    }, true);
+
+    editor.addEventListener('click', event => {
+      const button = event.target?.closest?.('button');
+      if (!button || !editor.contains(button)) return;
+      queueMicrotask(() => button.isConnected && button.blur());
+    }, true);
+
+    // Safe narrow observer: it only watches new editor children. The callback
+    // changes tabindex attributes, not child nodes, so it cannot self-trigger.
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType === 1) prepareEditorButtons(node);
+        }
+      }
+    });
+    observer.observe(editor, { childList: true, subtree: true });
+  }
+
+  function clampLivePartScale(root) {
+    if (!root) return;
+    const safe = value => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return 1;
+      return Math.max(MIN_PART_SCALE, number);
+    };
+    root.scale.set(safe(root.scale.x), safe(root.scale.y), safe(root.scale.z));
+  }
+
+  function updateLiveScaleFields(object) {
+    if (!object?.scale) return;
+    document.querySelectorAll('.prop-value[data-key="scale"]').forEach(input => {
+      const index = Number(input.dataset.i);
+      const value = Number(object.scale[index]);
+      if (Number.isFinite(value)) input.value = String(Number(value.toFixed(4)));
+    });
+  }
+
+  function installStablePartScaling() {
+    const viewport = window.EPH3D;
+    if (!viewport) return false;
+
+    if (!viewport.__ephStableScaleSync && typeof viewport.syncSelectedFromRoot === 'function') {
+      viewport.__ephStableScaleSync = true;
+      const previousSync = viewport.syncSelectedFromRoot.bind(viewport);
+      viewport.syncSelectedFromRoot = function(commit) {
+        const object = this.getObjectById?.(this.selectedId);
+        const root = this.objectRoots?.get?.(this.selectedId);
+        if (this.tool === 'scale' && object?.type === 'part' && root) {
+          // Never let TransformControls cross through zero. A zero/negative
+          // component can collapse or invert the mesh before the final bake.
+          clampLivePartScale(root);
+        }
+        const result = previousSync(commit);
+        if (this.tool === 'scale' && object?.type === 'part') this.updateSelectionBox?.();
+        return result;
+      };
+    }
+
+    const change = viewport.callbacks?.change;
+    if (typeof change === 'function' && !change.__ephStableScaleChange) {
+      const previousChange = change;
+      const stableChange = function(object, commit) {
+        if (viewport.tool === 'scale' && object?.type === 'part' && commit !== true) {
+          // Critical: texture-projection-v4 bakes Part scale inside
+          // VMAP.applyObjectToDocument(). The old renderer called that on every
+          // TransformControls mouse-move, repeatedly multiplying the vertices.
+          // Keep the live scale only in the viewport/object and let the existing
+          // commitObjectTransform path bake it exactly once when dragging ends.
+          updateLiveScaleFields(object);
+          return;
+        }
+        return previousChange(object, commit);
+      };
+      stableChange.__ephStableScaleChange = true;
+      stableChange.__ephPreviousChange = previousChange;
+      viewport.callbacks.change = stableChange;
+    }
+
+    return true;
   }
 
   function repair() {
@@ -45,13 +150,18 @@
       event.stopPropagation();
       api?.windowClose?.();
     };
+
+    installEditorButtonFocusGuard();
+    installStablePartScaling();
   }
 
-  // Bounded repairs only. Do not observe DOM mutations here: a previous
-  // version used a MutationObserver and could amplify other startup mutations.
+  // Bounded startup/runtime repairs only. Do not use a document-wide mutation
+  // observer here; the 0.6.2 audit previously created a renderer-starving loop.
   repair();
   requestAnimationFrame(repair);
   setTimeout(repair, 100);
   setTimeout(repair, 500);
+  setTimeout(repair, 1500);
   window.addEventListener('pageshow', repair, { once: true });
+  window.addEventListener('eph3d-ready', repair, { once: true });
 })();
