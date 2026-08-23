@@ -41,7 +41,7 @@ function nextCopyName(source) {
 
 function pasteSelected() {
   const source = editorClipboard;
-  if (!source || !COPY_TYPES.has(source.type) || !S.doc) return false;
+  if (!source || !COPY_TYPES.has(source.type) || !S.doc || !S.viewport) return false;
   pushHistory();
   const position = [...(source.position || [0, 0, 0])];
   position[0] += 16;
@@ -75,6 +75,7 @@ function pasteSelected() {
     object.type = source.type;
   }
 
+  if (!object) { S.undo.pop(); return false; }
   object.name = nextCopyName(source);
   object.parent = S.objects.some(item => item.id === source.parent) ? source.parent : 'world';
   object.visible = source.visible !== false;
@@ -102,7 +103,7 @@ function pasteSelected() {
   return true;
 }
 
-function installClipboardAndReload() {
+function installClipboard() {
   window.addEventListener('keydown', event => {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || editableTarget(event.target)) return;
     const key = event.key.toLowerCase();
@@ -110,10 +111,6 @@ function installClipboardAndReload() {
       if (copySelected()) event.preventDefault();
     } else if (key === 'v') {
       if (pasteSelected()) event.preventDefault();
-    } else if (key === 'r') {
-      event.preventDefault();
-      window.EPH_COLLAB?.sendSnapshotNow?.();
-      setTimeout(() => location.reload(), 25);
     }
   }, true);
 }
@@ -167,8 +164,10 @@ function installShiftMaterial() {
 
 function installSurfaceSnap() {
   const viewport = S.viewport;
-  if (!viewport || viewport.__ephSurfaceSnapV7) return;
+  if (!viewport || viewport.__ephSurfaceSnapV8) return;
   viewport.__ephSurfaceSnapV7 = true;
+  viewport.__ephSurfaceSnapV8 = true;
+  viewport.__ephAuditSurfaceSnap = true;
   viewport.surfaceSnap = localStorage.getItem('eph-surface-snap') === '1';
 
   const moveHost = document.getElementById('ephMoveSnap')?.parentElement;
@@ -191,8 +190,7 @@ function installSurfaceSnap() {
     if (!event.value || viewport.tool !== 'move' || !viewport.surfaceSnap) { surfaceDrag = null; return; }
     const root = viewport.objectRoots.get(viewport.selectedId);
     if (!root) return;
-    const box = new THREE.Box3().setFromObject(root);
-    surfaceDrag = { previousBottom: box.min.z };
+    surfaceDrag = { previousBottom: new THREE.Box3().setFromObject(root).min.z };
   });
 
   viewport.transform.addEventListener('objectChange', () => {
@@ -200,26 +198,39 @@ function installSurfaceSnap() {
     const root = viewport.objectRoots.get(viewport.selectedId);
     if (!root) return;
     let box = new THREE.Box3().setFromObject(root);
-    const center = box.getCenter(new THREE.Vector3());
     const currentBottom = box.min.z;
     const previousBottom = surfaceDrag.previousBottom;
-    const others = [...viewport.objectRoots.entries()].filter(([id]) => id !== viewport.selectedId).map(([, value]) => value);
-    if (!others.length) { surfaceDrag.previousBottom = currentBottom; return; }
+    const snapDistance = Math.max(2, Math.min(48, (Number(viewport.moveSnap) || 1) * 2));
+    const candidates = [...viewport.objectRoots.entries()]
+      .filter(([id]) => id !== viewport.selectedId)
+      .filter(([id]) => ['part', 'terrain', 'prop'].includes(viewport.getObjectById(id)?.type))
+      .map(([, candidate]) => candidate);
+    if (!candidates.length) { surfaceDrag.previousBottom = currentBottom; return; }
 
-    const crossingDistance = Math.max(0, previousBottom - currentBottom);
-    const snapDistance = Math.max(2, Math.min(32, (Number(viewport.moveSnap) || 1) * 2));
+    const insetX = Math.min(1, Math.max(0, (box.max.x - box.min.x) * .02));
+    const insetY = Math.min(1, Math.max(0, (box.max.y - box.min.y) * .02));
+    const xs = [box.min.x + insetX, (box.min.x + box.max.x) / 2, box.max.x - insetX];
+    const ys = [box.min.y + insetY, (box.min.y + box.max.y) / 2, box.max.y - insetY];
     const originZ = Math.max(previousBottom + .5, currentBottom + snapDistance);
-    viewport.raycaster.set(new THREE.Vector3(center.x, center.y, originZ), new THREE.Vector3(0, 0, -1));
-    viewport.raycaster.far = crossingDistance + snapDistance + 1;
-    const hit = viewport.raycaster.intersectObjects(others, true).find(item => item.point.z <= originZ + .001);
-    if (hit) {
-      const crossed = previousBottom >= hit.point.z - .01 && currentBottom <= hit.point.z + .01;
-      const near = currentBottom >= hit.point.z && currentBottom - hit.point.z <= snapDistance;
-      if (crossed || near) {
-        root.position.z += hit.point.z - currentBottom + .02;
-        viewport.syncSelectedFromRoot(false);
-        box = new THREE.Box3().setFromObject(root);
-      }
+    const far = Math.max(snapDistance + 1, previousBottom - currentBottom + snapDistance + 1);
+    let bestZ = -Infinity;
+
+    for (const x of xs) for (const y of ys) {
+      viewport.raycaster.set(new THREE.Vector3(x, y, originZ), new THREE.Vector3(0, 0, -1));
+      viewport.raycaster.far = far;
+      const hit = viewport.raycaster.intersectObjects(candidates, true)[0];
+      if (!hit) continue;
+      const z = hit.point.z;
+      const crossed = previousBottom >= z - .01 && currentBottom <= z + .01;
+      const near = currentBottom >= z && currentBottom - z <= snapDistance;
+      if ((crossed || near) && z > bestZ) bestZ = z;
+    }
+
+    if (Number.isFinite(bestZ)) {
+      root.position.z += bestZ - currentBottom + .02;
+      viewport.syncSelectedFromRoot(false);
+      viewport.updateSelectionBox();
+      box = new THREE.Box3().setFromObject(root);
     }
     surfaceDrag.previousBottom = box.min.z;
   });
@@ -275,7 +286,7 @@ function install() {
   style.rel = 'stylesheet';
   style.href = 'editor-ux-v7.css';
   document.head.appendChild(style);
-  installClipboardAndReload();
+  installClipboard();
   installPartPlacement();
   installShiftMaterial();
   installSurfaceSnap();
