@@ -133,6 +133,7 @@
   loadPass('diagnostics-v16.js', '__ephDiagnosticsV16');
   loadPass('diagnostics-v18.js', '__ephDiagnosticsV18');
   loadPass('entity-fidelity-v17.js', '__ephEntityFidelityV17');
+  loadPass('fgd-editor-model-guard-v18.js', '__ephFgdEditorModelGuardV18');
   loadPass('entity-fidelity-v18.js', '__ephEntityFidelityV18');
   loadPass('large-map-bootstrap-v18.js', '__ephLargeMapBootstrapV18');
 
