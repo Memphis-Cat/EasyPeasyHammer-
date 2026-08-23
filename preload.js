@@ -1,6 +1,24 @@
 // byanca
 const { contextBridge, ipcRenderer } = require('electron');
 
+async function loadVmap(vmapPath) {
+  const result = await ipcRenderer.invoke('project:load-vmap', vmapPath);
+  if (!result?.ok || typeof result.text !== 'string') return result;
+  const header = result.text.slice(0, 512);
+  if (/dmx\s+encoding\s+keyvalues2\b/i.test(header)) return { ...result, sourceEncoding: 'keyvalues2' };
+  if (!/dmx\s+encoding\s+binary\b/i.test(header)) return result;
+
+  const decoded = await ipcRenderer.invoke('project:decode-vmap', vmapPath);
+  if (!decoded?.ok) return { ok: false, error: decoded?.error || 'This binary Hammer VMAP could not be decoded.' };
+  return {
+    ...result,
+    ...decoded,
+    ok: true,
+    text: decoded.text,
+    sourceEncoding: 'binary'
+  };
+}
+
 contextBridge.exposeInMainWorld('easyPeasyHammer', {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
@@ -13,7 +31,8 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   saveProfile: (username) => ipcRenderer.invoke('profile:set', username),
   openVmap: () => ipcRenderer.invoke('project:open-vmap'),
   createProject: (name) => ipcRenderer.invoke('project:create', name),
-  loadVmap: (vmapPath) => ipcRenderer.invoke('project:load-vmap', vmapPath),
+  loadVmap,
+  decodeVmap: (vmapPath) => ipcRenderer.invoke('project:decode-vmap', vmapPath),
   saveVmap: (vmapPath, text, backup = true) => ipcRenderer.invoke('project:save-vmap', vmapPath, text, backup),
   continueLast: () => ipcRenderer.invoke('project:continue-last'),
   autosave: (snapshot) => ipcRenderer.invoke('project:autosave', snapshot),
