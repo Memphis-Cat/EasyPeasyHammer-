@@ -7,6 +7,8 @@ const crypto = require('crypto');
 
 const MAX_BLOCKS = 24;
 const MAX_RESPONSE_BYTES = 24 * 1024 * 1024;
+const MAX_PATCH_BYTES = 32 * 1024 * 1024;
+const VALID_TOKEN = /^[a-f0-9]{40}$/i;
 const caches = new Map();
 const cancelledOpeners = new Set();
 
@@ -187,13 +189,15 @@ async function prepareLargeMapCache(app, sourcePath, decodedPath, inspection = {
 }
 
 function loadCache(app, token) {
-  if (caches.has(token)) return caches.get(token);
-  const folder = path.join(cacheRoot(app), String(token || ''));
+  const normalizedToken = String(token || '');
+  if (!VALID_TOKEN.test(normalizedToken)) return null;
+  if (caches.has(normalizedToken)) return caches.get(normalizedToken);
+  const folder = path.join(cacheRoot(app), normalizedToken);
   const index = readJson(path.join(folder, 'index.json'));
   const filePath = path.join(folder, 'decoded.vmap');
   if (!index?.entries || !fs.existsSync(filePath)) return null;
-  const cache = { token, folder, filePath, index, byId: new Map(index.entries.map(x => [x.entryId, x])) };
-  caches.set(token, cache);
+  const cache = { token: normalizedToken, folder, filePath, index, byId: new Map(index.entries.map(x => [x.entryId, x])) };
+  caches.set(normalizedToken, cache);
   return cache;
 }
 
@@ -208,7 +212,10 @@ function getBlocks(app, token, ids) {
     for (const id of wanted) {
       const entry = cache.byId.get(id);
       if (!entry?.length) continue;
-      if (blocks.length && total + entry.length > MAX_RESPONSE_BYTES) break;
+      if (!Number.isSafeInteger(entry.length) || entry.length <= 0 || entry.length > MAX_RESPONSE_BYTES) {
+        return { ok: false, error: `Large-map block ${id} exceeds the safe response limit.` };
+      }
+      if (total + entry.length > MAX_RESPONSE_BYTES) break;
       const buffer = Buffer.alloc(entry.length);
       const bytes = fs.readSync(fd, buffer, 0, entry.length, entry.start);
       blocks.push({ entryId: id, text: buffer.subarray(0, bytes).toString('utf8') });
@@ -230,14 +237,24 @@ function replacementPlan(cache, patches) {
   return [...input.values()].map(patch => ({ entry: cache.byId.get(String(patch.entryId)), text: patch.text })).filter(x => x.entry).sort((a, b) => a.entry.start - b.entry.start);
 }
 
+function patchBytes(replacements, additions) {
+  let total = 0;
+  for (const item of replacements) total += Buffer.byteLength(String(item.text || ''), 'utf8');
+  for (const item of additions) total += Buffer.byteLength(String(item || ''), 'utf8');
+  return total;
+}
+
 async function saveLargeMap(app, token, targetPath, patches = [], newBlocks = []) {
   const cache = loadCache(app, token);
   if (!cache) return { ok: false, error: 'Large-map cache is unavailable.' };
   const replacements = replacementPlan(cache, patches);
   const additions = (Array.isArray(newBlocks) ? newBlocks : []).map(String).filter(Boolean);
+  if (patchBytes(replacements, additions) > MAX_PATCH_BYTES) return { ok: false, error: 'Large-map edit payload exceeds the 32 MB safety limit.' };
   if (!replacements.length && !additions.length) return { ok: true, unchanged: true, largeMapToken: token, entries: cache.index.entries.map(({start,length,...x}) => x) };
-  const target = path.resolve(String(targetPath || cache.index.sourcePath || ''));
+  const source = path.resolve(String(cache.index.sourcePath || ''));
+  const target = path.resolve(String(targetPath || source));
   if (path.extname(target).toLowerCase() !== '.vmap') return { ok: false, error: 'Invalid VMAP path.' };
+  if (target.toLowerCase() !== source.toLowerCase()) return { ok: false, error: 'Large-map save target does not match the opened VMAP.' };
   const temp = `${target}.eph-large-tmp`;
   const backup = fs.existsSync(target) ? `${target}.eph-backup` : null;
   if (backup) fs.copyFileSync(target, backup);
@@ -271,7 +288,15 @@ async function saveLargeMap(app, token, targetPath, patches = [], newBlocks = []
     if (!inserted && additions.length) await addNew();
     await copy(cursor, fs.statSync(cache.filePath).size);
     await new Promise((resolve, reject) => { out.on('error', reject); out.end(resolve); });
-    fs.renameSync(temp, target);
+    try {
+      fs.renameSync(temp, target);
+    } catch (error) {
+      // Windows commonly refuses rename-over-existing. Keep the backup above,
+      // replace from the fully written temp, then remove the temp only on success.
+      if (!fs.existsSync(target)) throw error;
+      fs.copyFileSync(temp, target);
+      fs.rmSync(temp, { force: true });
+    }
     const stat = fs.statSync(target);
     const refreshed = await prepareLargeMapCache(app, target, target, { size: stat.size, modifiedAt: stat.mtime.toISOString() });
     return { ok: true, backupPath: backup, largeMapToken: refreshed.token, entries: refreshed.entries, meshCount: refreshed.meshCount, entityCount: refreshed.entityCount, decodedBytes: refreshed.decodedBytes };
@@ -288,6 +313,7 @@ async function openLargeText(app, event, vmapPath) {
   cancelledOpeners.delete(sender);
   try {
     const target = path.resolve(String(vmapPath || ''));
+    if (path.extname(target).toLowerCase() !== '.vmap') return { ok: false, error: 'Only .vmap files can be opened as large maps.' };
     if (!fs.existsSync(target)) return { ok: false, error: 'VMAP file does not exist.' };
     const stat = fs.statSync(target);
     const cache = await prepareLargeMapCache(app, target, target, { size: stat.size, modifiedAt: stat.mtime.toISOString() }, () => cancelledOpeners.has(sender));
@@ -302,7 +328,11 @@ function registerLargeMapService({ ipcMain, app }) {
   if (globalThis.__ephLargeMapService) return;
   globalThis.__ephLargeMapService = true;
   ipcMain.handle('large-map:get-blocks', (_event, token, ids) => getBlocks(app, token, ids));
-  ipcMain.handle('large-map:release', (_event, token) => { caches.delete(String(token || '')); return { ok: true }; });
+  ipcMain.handle('large-map:release', (_event, token) => {
+    const normalized = String(token || '');
+    if (VALID_TOKEN.test(normalized)) caches.delete(normalized);
+    return { ok: true };
+  });
   ipcMain.handle('large-map:open-text', (event, mapPath) => openLargeText(app, event, mapPath));
   ipcMain.handle('large-map:cancel-open', event => { cancelledOpeners.add(event?.sender?.id || 0); return { ok: true }; });
   ipcMain.handle('large-map:save', (_event, token, target, patches, newBlocks) => saveLargeMap(app, token, target, patches, newBlocks));
