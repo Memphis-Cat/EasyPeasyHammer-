@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { AssetHost } = require('./asset-host');
 const { registerAppServices } = require('./app-services');
+const { validateVmapText } = require('./vmap-text-preflight');
 
 let mainWindow = null;
 let chatWindow = null;
@@ -146,16 +147,29 @@ function createBackup(vmapPath) {
   return backupPath;
 }
 
+function validateSerializedVmap(text, stage) {
+  const check = validateVmapText(text);
+  if (!check.ok) throw new Error(`VMAP ${stage} validation failed: ${check.errors.join(' ')}`);
+  return check;
+}
+
 function saveVmap(vmapPath, text, makeBackup = true) {
   let tempPath = null;
+  let backupPath = null;
   try {
     if (!vmapPath) return { ok: false, error: 'Missing VMAP path.' };
     if (path.extname(vmapPath).toLowerCase() !== '.vmap') return { ok: false, error: 'Only .vmap files can be written.' };
     if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'VMAP data is empty.' };
+
+    const preflight = validateSerializedVmap(text, 'pre-write');
     ensureFolder(path.dirname(vmapPath));
-    const backupPath = makeBackup ? createBackup(vmapPath) : null;
+    backupPath = makeBackup ? createBackup(vmapPath) : null;
     tempPath = `${vmapPath}.eph-tmp`;
     fs.writeFileSync(tempPath, text, 'utf8');
+
+    const stagedText = fs.readFileSync(tempPath, 'utf8');
+    validateSerializedVmap(stagedText, 'temporary-file');
+
     try {
       fs.renameSync(tempPath, vmapPath);
       tempPath = null;
@@ -165,7 +179,22 @@ function saveVmap(vmapPath, text, makeBackup = true) {
       fs.rmSync(tempPath, { force: true });
       tempPath = null;
     }
-    return { ok: true, backupPath, bytes: Buffer.byteLength(text, 'utf8') };
+
+    const writtenText = fs.readFileSync(vmapPath, 'utf8');
+    try {
+      validateSerializedVmap(writtenText, 'post-write');
+    } catch (error) {
+      if (backupPath && fs.existsSync(backupPath)) fs.copyFileSync(backupPath, vmapPath);
+      else fs.rmSync(vmapPath, { force: true });
+      throw error;
+    }
+
+    return {
+      ok: true,
+      backupPath,
+      bytes: Buffer.byteLength(writtenText, 'utf8'),
+      warnings: preflight.warnings || []
+    };
   } catch (error) {
     return { ok: false, error: error.message };
   } finally {
