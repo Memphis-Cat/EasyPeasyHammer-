@@ -23,7 +23,6 @@
         <button id="confirmCreateButton" type="submit" class="primary-button">Create project</button>
       </div>
     </form>`;
-
   oldModal.replaceWith(dialog);
 
   const form = dialog.querySelector('#newProjectForm');
@@ -38,12 +37,7 @@
     error.textContent = message || '';
     error.classList.toggle('visible', Boolean(message));
   };
-
-  const close = () => {
-    setError('');
-    if (dialog.open) dialog.close();
-  };
-
+  const close = () => { setError(''); if (dialog.open) dialog.close(); };
   const open = () => {
     if (dialog.open) return;
     input.value = '';
@@ -51,118 +45,77 @@
     input.readOnly = false;
     setError('');
     dialog.showModal();
-    requestAnimationFrame(() => {
-      input.focus({ preventScroll: true });
-      input.select();
-    });
+    requestAnimationFrame(() => { input.focus({ preventScroll: true }); input.select(); });
   };
+
+  async function waitForRuntime() {
+    try { await window.EPH_RUNTIME_READY; } catch {}
+  }
 
   const createProject = async () => {
     const name = input.value.trim();
-    if (!name) {
-      setError('Enter a project name.');
-      input.focus({ preventScroll: true });
-      return;
-    }
-
-    setError('');
-    confirm.disabled = true;
-    cancel.disabled = true;
-
+    if (!name) { setError('Enter a project name.'); input.focus({ preventScroll: true }); return; }
+    setError(''); confirm.disabled = true; cancel.disabled = true;
     try {
+      await waitForRuntime();
       const result = await api.createProject(name);
-      if (!result) {
-        setError('Could not create the project.');
-        return;
-      }
-
+      if (!result) { setError('Could not create the project.'); return; }
       const project = result.project || result;
       const doc = VMAP.createEmptyDocument();
       const validation = VMAP.validate(doc);
-      if (!validation.ok) {
-        setError(`Could not create a valid Hammer VMAP: ${validation.errors.join(' ')}`);
-        return;
-      }
+      if (!validation.ok) { setError(`Could not create a valid Hammer VMAP: ${validation.errors.join(' ')}`); return; }
       const write = await api.saveVmap(project.vmapPath, VMAP.stringify(doc), false);
-      if (!write?.ok) {
-        setError(write?.error || 'Could not create the VMAP file.');
-        return;
-      }
-
+      if (!write?.ok) { setError(write?.error || 'Could not create the VMAP file.'); return; }
       close();
       if (typeof window.loadProject === 'function') {
         const loaded = await window.loadProject(project, null);
         if (!loaded) setError('The project was created, but could not be opened.');
-      } else {
-        location.reload();
-      }
+      } else location.reload();
     } catch (e) {
       setError(e?.message || 'Could not create the project.');
     } finally {
-      confirm.disabled = false;
-      cancel.disabled = false;
+      confirm.disabled = false; cancel.disabled = false;
     }
   };
 
-  form.addEventListener('submit', event => {
-    event.preventDefault();
-    createProject();
-  });
-
+  form.addEventListener('submit', event => { event.preventDefault(); createProject(); });
   form.addEventListener('keydown', event => event.stopPropagation());
   form.addEventListener('keyup', event => event.stopPropagation());
-
   cancel.addEventListener('click', close);
-  dialog.addEventListener('cancel', event => {
-    event.preventDefault();
-    close();
-  });
-
+  dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   document.getElementById('createProjectButton').onclick = open;
-  const toolbarNew = document.getElementById('toolbarNew');
-  if (toolbarNew) toolbarNew.onclick = open;
+  document.getElementById('toolbarNew')?.addEventListener('click', open);
   const fileNew = document.querySelector('.dropdown-menu [data-action="new-project"]');
   if (fileNew) fileNew.onclick = open;
 })();
 
-function loadPass(src, marker) {
+function loadPass(src) {
   return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[data-${marker}]`);
+    const existing = [...document.scripts].find(script => script.dataset.ephPassSrc === src || script.getAttribute('src')?.endsWith(`/${src}`) || script.getAttribute('src') === src);
     if (existing) {
-      if (existing.dataset.loaded === '1') resolve();
-      else {
-        existing.addEventListener('load', resolve, { once: true });
-        existing.addEventListener('error', reject, { once: true });
-      }
+      if (existing.dataset.ephLoaded === '1' || existing.readyState === 'complete') return resolve(true);
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', () => reject(new Error(`Could not load ${src}`)), { once: true });
       return;
     }
-
     const script = document.createElement('script');
     script.src = src;
-    script.dataset[marker] = '1';
-    script.addEventListener('load', () => { script.dataset.loaded = '1'; resolve(); }, { once: true });
+    script.async = false;
+    script.dataset.ephPassSrc = src;
+    script.addEventListener('load', () => { script.dataset.ephLoaded = '1'; resolve(true); }, { once: true });
     script.addEventListener('error', () => reject(new Error(`Could not load ${src}`)), { once: true });
     document.body.appendChild(script);
   });
 }
 
-async function safeLoadPass(src, marker) {
-  try {
-    await loadPass(src, marker);
-    return true;
-  } catch (error) {
-    console.error(`EasyPeasyHammer pass failed: ${src}`, error);
-    return false;
-  }
+async function safeLoadPass(src) {
+  try { return await loadPass(src); }
+  catch (error) { console.error(`EasyPeasyHammer pass failed: ${src}`, error); return false; }
 }
 
 async function ensureViewportBundle() {
   if (window.EPH3D) return true;
-
-  await new Promise(resolve => setTimeout(resolve, 250));
-  if (window.EPH3D) return true;
-
-  const loaded = await safeLoadPass('bundled/viewport3d.bundle.js', 'ephViewport3dBundle');
+  const loaded = await safeLoadPass('bundled/viewport3d.bundle.js');
   if (!loaded || !window.EPH3D) {
     console.error('EasyPeasyHammer renderer did not initialize.');
     return false;
@@ -170,40 +123,90 @@ async function ensureViewportBundle() {
   return true;
 }
 
-(async () => {
-  await safeLoadPass('vmap-compat-v9.js', 'ephVmapCompatV9');
-  await safeLoadPass('vmap-helper-compat-v9.js', 'ephVmapHelperCompatV9');
-  await safeLoadPass('interaction-pass.js', 'ephInteractionPass');
+const BASE_PASSES = [
+  'vmap-compat-v9.js',
+  'vmap-helper-compat-v9.js',
+  'interaction-pass.js',
+  'bundled/advanced-viewport.bundle.js',
+  'bundled/hammer-fidelity.bundle.js',
+  'bundled/fidelity-v2.bundle.js',
+  'bundled/texture-projection-v4.bundle.js',
+  'load-acceleration.js',
+  'default-part.js',
+  'hammer-fidelity-ui.js',
+  'advanced-ui.js',
+  'pre-audit-v8.js',
+  'bundled/editor-tools-v6.bundle.js',
+  'bundled/editor-ux-v7.bundle.js',
+  'editor-ux-bindings-v7.js',
+  'special-mesh-duplicate-v6.js',
+  'phase4-project-sync.js',
+  'phase4-copy.js',
+  'bundled/audit-fixes-v8.bundle.js',
+  'collab-runtime.js',
+  'collab-terrain-live-v8.js',
+  'collab-camera-v6.js',
+  'vmap-finalize-v10.js',
+  'bundled/collab-visuals.bundle.js',
+  'bell1.js',
+  'collab-ui.js',
+  'save-guard-v10.js',
+  'vertex-paint-fix-v14.js',
+  'entity-compat-v15.js',
+  'entity-mesh-compat-v15.js',
+  'fgd-catalog-v15.js',
+  'complex-vmap-v15.js',
+  'layout-safe-v14.js'
+];
+
+const LATE_PASSES = [
+  'vmap-import-fidelity-v27.js',
+  'large-map-stream-v21.js',
+  'large-map-spatial-v19.js',
+  'visual-clean-v16.js',
+  'project-name-guard-v16.js',
+  'diagnostics-v16.js',
+  'diagnostics-v18.js',
+  'entity-fidelity-v17.js',
+  'fgd-editor-model-guard-v18.js',
+  'entity-fidelity-v18.js',
+  'map-local-assets-v19.js',
+  'map-local-fast-v21.js',
+  'render-performance-v20.js',
+  'entity-runtime-v21.js',
+  'mesh-render-fast-v27.js',
+  'source2-coordinates-v23.js',
+  'scale-tool-v21.js',
+  'scale-legacy-disable-v21.js',
+  'transform-precision-v23.js',
+  'large-map-bootstrap-v21.js',
+  'collab-chat-v22.js',
+  'multi-select-v22.js',
+  'multi-select-coordinates-v23.js',
+  'collab-local-view-v23.js',
+  'local-history-v22.js',
+  'history-bindings-v22.js',
+  'history-hierarchy-repair-v26.js',
+  'negative-brush-v22.js',
+  'negative-brush-safety-v22.js',
+  'properties-scroll-v23.js',
+  'solid-entity-runtime-v24.js',
+  'collision-export-v25.js',
+  'large-map-ui-fast-v27.js',
+  'editor-stability-v28.js',
+  'close-save-v28.js',
+  'solid-entity-unified-v30.js',
+  'render-core-integrity-v34.js',
+  'startup-recents-v14.js'
+];
+
+document.documentElement.dataset.ephRuntimeReady = '0';
+window.EPH_RUNTIME_READY = (async () => {
   await ensureViewportBundle();
-  await safeLoadPass('bundled/advanced-viewport.bundle.js', 'ephAdvancedViewportBundle');
-  await safeLoadPass('bundled/hammer-fidelity.bundle.js', 'ephHammerFidelityBundle');
-  await safeLoadPass('bundled/fidelity-v2.bundle.js', 'ephFidelityV2Bundle');
-  await safeLoadPass('bundled/texture-projection-v4.bundle.js', 'ephTextureProjectionV4Bundle');
-  await safeLoadPass('load-acceleration.js', 'ephLoadAcceleration');
-  await safeLoadPass('default-part.js', 'ephDefaultPart');
-  await safeLoadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
-  await safeLoadPass('advanced-ui.js', 'ephAdvancedUi');
-  await safeLoadPass('pre-audit-v8.js', 'ephPreAuditV8');
-  await safeLoadPass('bundled/editor-tools-v6.bundle.js', 'ephEditorToolsV6Bundle');
-  await safeLoadPass('bundled/editor-ux-v7.bundle.js', 'ephEditorUxV7Bundle');
-  await safeLoadPass('editor-ux-bindings-v7.js', 'ephEditorUxBindingsV7');
-  await safeLoadPass('special-mesh-duplicate-v6.js', 'ephSpecialMeshDuplicateV6');
-  await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
-  await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
-  await safeLoadPass('bundled/audit-fixes-v8.bundle.js', 'ephAuditFixesV8Bundle');
-  await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
-  await safeLoadPass('collab-terrain-live-v8.js', 'ephCollabTerrainLiveV8');
-  await safeLoadPass('collab-camera-v6.js', 'ephCollabCameraV6');
-  await safeLoadPass('vmap-finalize-v10.js', 'ephVmapFinalizeV10');
-  await safeLoadPass('bundled/collab-visuals.bundle.js', 'ephCollabVisualsBundle');
-  await safeLoadPass('bell1.js', 'ephBell1');
-  await safeLoadPass('collab-ui.js', 'ephCollabUi');
-  await safeLoadPass('save-guard-v10.js', 'ephSaveGuardV10');
-  await safeLoadPass('vertex-paint-fix-v14.js', 'ephVertexPaintFixV14');
-  await safeLoadPass('entity-compat-v15.js', 'ephEntityCompatV15');
-  await safeLoadPass('entity-mesh-compat-v15.js', 'ephEntityMeshCompatV15');
-  await safeLoadPass('fgd-catalog-v15.js', 'ephFgdCatalogV15');
-  await safeLoadPass('complex-vmap-v15.js', 'ephComplexVmapV15');
-  await safeLoadPass('layout-safe-v14.js', 'ephLayoutSafeV14');
-  await safeLoadPass('startup-recents-v14.js', 'ephStartupRecentsV14');
+  for (const src of BASE_PASSES) await safeLoadPass(src);
+  for (const src of LATE_PASSES) await safeLoadPass(src);
+  document.documentElement.dataset.ephRuntimeReady = '1';
+  window.dispatchEvent(new CustomEvent('eph-runtime-ready'));
+  console.info('[Runtime] Deterministic renderer pass sequence completed.');
+  return true;
 })();
