@@ -27,11 +27,18 @@
     if (saving) return false;
     saving = true;
     const status = $('autosaveStatus');
-    const before = status?.textContent || '';
+    if (status) {
+      status.textContent = 'Saving VMAP...';
+      status.title = 'Running Hammer compatibility checks before writing the VMAP.';
+    }
     try {
-      const result = await rawSave(show);
-      const after = status?.textContent || '';
-      if (/^Save failed/i.test(after) || (/^Save failed/i.test(before) && after === before)) return false;
+      await rawSave(show);
+      const saved = /^Saved\s/i.test(status?.textContent || '');
+      if (!saved) {
+        report(new Error('The VMAP writer rejected the file or did not complete successfully.'), 'Save');
+        return false;
+      }
+      if (status) status.title = '';
       return true;
     } catch (error) {
       report(error, 'Save');
