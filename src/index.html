@@ -8,14 +8,6 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="phase3.css" />
   <link rel="stylesheet" href="startup.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "../node_modules/three/build/three.module.js",
-        "three/addons/": "../node_modules/three/examples/jsm/"
-      }
-    }
-  </script>
 </head>
 <body>
 <div id="app">
@@ -46,9 +38,6 @@
           <button class="menu-button" data-menu="fileMenu">File</button>
           <button class="menu-button" data-menu="editMenu">Edit</button>
           <button class="menu-button" data-menu="viewMenu">View</button>
-          <button class="menu-button" data-menu="buildMenu">Build</button>
-          <button class="menu-button" data-menu="windowMenu">Window</button>
-          <button class="menu-button" data-menu="helpMenu">Help</button>
         </div>
         <div id="projectTitle" class="project-title">Untitled.vmap</div>
       </div>
@@ -104,9 +93,6 @@
       <button data-action="toggle-right">Toggle Properties</button>
       <button data-action="toggle-bottom">Toggle Bottom Panel</button>
     </div>
-    <div id="buildMenu" class="dropdown-menu hidden"><button data-action="build-placeholder">Save &amp; Open CS2 Workshop Tools</button></div>
-    <div id="windowMenu" class="dropdown-menu hidden"><button data-action="reset-layout">Reset Layout</button></div>
-    <div id="helpMenu" class="dropdown-menu hidden"><button data-action="phase-info">Phase 3 single-user editor</button></div>
 
     <main class="editor-layout">
       <aside id="leftPanel" class="left-panel panel">
@@ -150,14 +136,14 @@
           <div class="axis-widget"><span class="axis-z">Z</span><span class="axis-y">Y</span><span class="axis-x">X</span></div>
         </div>
         <section id="bottomPanel" class="bottom-panel panel">
-          <div class="bottom-tabs"><button data-bottom-tab="console" class="active">Console</button><button data-bottom-tab="build">Build Output</button><button data-bottom-tab="collaborators">Collaborators</button><button data-bottom-tab="project">Project</button></div>
+          <div class="bottom-tabs"><button data-bottom-tab="console" class="active">Console</button><button data-bottom-tab="collaborators">Collaborators</button><button data-bottom-tab="project">Project</button></div>
           <div id="bottomContent" class="bottom-content"></div>
         </section>
       </section>
 
       <aside id="rightPanel" class="right-panel panel">
         <section class="scene-panel">
-          <div class="right-tabs"><button class="active">Scene</button><button>Hierarchy</button></div>
+          <div class="right-tabs"><button class="active">Scene</button></div>
           <div class="search-row"><input id="sceneSearch" type="text" placeholder="Search..." /></div>
           <div id="sceneTree" class="scene-tree"></div>
         </section>
@@ -172,7 +158,7 @@
       <label class="status-select">Angle Snap: <select id="angleSnap"><option>5°</option><option selected>15°</option><option>30°</option><option>45°</option></select></label>
       <button id="exportButton" class="status-button primary-status">Save VMAP</button>
       <button id="hammerButton" class="status-button">Open in Hammer</button>
-      <span class="status-dot offline" title="Single-user editor"></span>
+      <span class="status-dot offline" title="Collaboration available"></span>
     </footer>
   </section>
 
@@ -194,7 +180,7 @@
 <script src="icons/view_toolbar.js"></script>
 <script src="icons/viewport.js"></script>
 <script src="vmap.js"></script>
-<script type="module" src="viewport3d.js"></script>
+<script src="bundled/viewport3d.bundle.js"></script>
 <script src="renderer.js"></script>
 <script src="theme.js"></script>
 <script src="project-dialog.js"></script>
