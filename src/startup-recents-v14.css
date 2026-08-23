@@ -3,37 +3,22 @@
   width: min(760px, calc(100vw - 40px));
   max-height: calc(100vh - 70px);
   overflow: auto;
+  background: #000 !important;
+  color: #fff !important;
+  border-color: #222 !important;
 }
 
-.eph-recent-maps {
-  margin: 0 0 16px;
-  text-align: left;
-}
-
+.eph-recent-maps { margin: 0 0 16px; text-align: left; }
 .eph-recent-maps-title {
   margin: 0 0 8px;
-  color: #aeb6c1;
+  color: #fff;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .07em;
   text-transform: uppercase;
 }
-
-.eph-recent-maps-list {
-  display: grid;
-  gap: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding-right: 3px;
-}
-
-.eph-recent-map-row {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-}
-
+.eph-recent-maps-list { display: grid; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 3px; }
+.eph-recent-map-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 .eph-recent-map {
   width: 100%;
   min-width: 0;
@@ -42,107 +27,48 @@
   gap: 14px;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid #2d3540;
+  border: 1px solid #242424;
   border-radius: 7px;
-  background: #151a21;
-  color: #dce2e9;
+  background: #050505;
+  color: #fff;
   cursor: pointer;
   text-align: left;
 }
-
-.eph-recent-map:hover {
-  border-color: #3c6f9f;
-  background: #1b222b;
-}
-
-.eph-recent-map:disabled {
-  opacity: .55;
-  cursor: wait;
-}
-
-.eph-recent-map-main {
-  min-width: 0;
-}
-
-.eph-recent-map-name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 650;
-  font-size: 13px;
-}
-
-.eph-recent-map-path {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #798492;
-  font-size: 10px;
-}
-
-.eph-recent-map-time {
-  flex: 0 0 auto;
-  color: #7f8996;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
+.eph-recent-map:hover { border-color: #666; background: #0d0d0d; }
+.eph-recent-map:disabled { opacity: .55; cursor: wait; }
+.eph-recent-map-main { min-width: 0; }
+.eph-recent-map-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; font-size: 13px; color: #fff; }
+.eph-recent-map-path { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #929292; font-size: 10px; }
+.eph-recent-map-time { flex: 0 0 auto; color: #aaa; font-size: 10px; white-space: nowrap; }
 .eph-recent-map-delete {
   min-width: 58px;
   padding: 0 9px;
-  border: 1px solid #493139;
+  border: 1px solid #3a3a3a;
   border-radius: 7px;
-  background: #211519;
-  color: #c58e99;
+  background: #050505;
+  color: #ddd;
   cursor: pointer;
   font-size: 10px;
 }
-.eph-recent-map-delete:hover { background: #321b21; border-color: #70424d; color: #efb3be; }
-
-.eph-recent-maps-empty {
-  padding: 12px;
-  border: 1px dashed #303844;
-  border-radius: 7px;
-  color: #77818d;
-  text-align: center;
-  font-size: 11px;
-}
+.eph-recent-map-delete:hover { background: #161616; border-color: #777; color: #fff; }
+.eph-recent-maps-empty { padding: 12px; border: 1px dashed #333; border-radius: 7px; color: #999; text-align: center; font-size: 11px; }
 
 .eph-delete-map-dialog {
   width: min(510px, calc(100vw - 42px));
   padding: 0;
-  border: 1px solid #343b46;
+  border: 1px solid #333;
   border-radius: 8px;
-  background: #15191f;
-  color: #e3e7ec;
-  box-shadow: 0 22px 70px rgba(0,0,0,.58);
+  background: #000;
+  color: #fff;
+  box-shadow: 0 22px 70px rgba(0,0,0,.8);
 }
-.eph-delete-map-dialog::backdrop { background: rgba(0,0,0,.62); }
-.eph-delete-map-card { padding: 18px; }
-.eph-delete-map-card h2 { margin: 0 0 13px; font-size: 18px; }
-.eph-delete-map-name { margin: 0; font-weight: 650; color: #e1e5ea; }
-.eph-delete-map-path { margin: 4px 0 13px; color: #78828f; font-size: 10px; overflow-wrap: anywhere; }
-.eph-delete-map-warning {
-  padding: 10px 11px;
-  border: 1px solid #4e3636;
-  border-radius: 5px;
-  background: #211718;
-  color: #c9a4a5;
-  font-size: 11px;
-  line-height: 1.45;
-}
+.eph-delete-map-dialog::backdrop { background: rgba(0,0,0,.72); }
+.eph-delete-map-card { padding: 18px; background: #000; }
+.eph-delete-map-card h2 { margin: 0 0 13px; font-size: 18px; color: #fff; }
+.eph-delete-map-name { margin: 0; font-weight: 650; color: #fff; }
+.eph-delete-map-path { margin: 4px 0 13px; color: #999; font-size: 10px; overflow-wrap: anywhere; }
+.eph-delete-map-warning { padding: 10px 11px; border: 1px solid #444; border-radius: 5px; background: #080808; color: #ddd; font-size: 11px; line-height: 1.45; }
 .eph-delete-map-card .modal-actions { margin-top: 15px; }
-.eph-delete-danger {
-  min-height: 31px;
-  padding: 0 12px;
-  border: 1px solid #74404b;
-  border-radius: 5px;
-  background: #6e2532;
-  color: white;
-  cursor: pointer;
-}
-.eph-delete-danger:hover:not(:disabled) { background: #842f3e; }
+.eph-delete-danger { min-height: 31px; padding: 0 12px; border: 1px solid #777; border-radius: 5px; background: #fff; color: #000; cursor: pointer; }
+.eph-delete-danger:hover:not(:disabled) { background: #ddd; }
 .eph-delete-danger:disabled { opacity: .5; cursor: wait; }
