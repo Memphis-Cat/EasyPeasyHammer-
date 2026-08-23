@@ -24,17 +24,17 @@ function exposeViewportThree(sourceText) {
   const last = matches.at(-1);
   if (!last) return sourceText;
   const at = last.index + last[0].length;
-  // Runtime compatibility passes must use the *same* Three.js module instance as
-  // the viewport. Bundling another copy causes THREE's multiple-instances warning
-  // and can make helpers/streaming fail their dependency check.
-  return `${sourceText.slice(0, at)}\nwindow.THREE = THREE;\n${sourceText.slice(at)}`;
+  return `${sourceText.slice(0, at)}\nwindow.EPH_THREE = THREE;\nwindow.THREE = THREE;\n${sourceText.slice(at)}`;
 }
 
 async function bundleOne(sourceName, outputName, guardViewport) {
   const source = path.join(sourceRoot, sourceName);
   const outfile = path.join(outputRoot, outputName);
   const banner = guardViewport ? '// byanca\nif (!window.EPH3D) {' : '// byanca';
-  const footer = guardViewport ? '}' : '';
+  // Some older enhancement sources assign globalThis.THREE to their own bundled
+  // copy. Restore the actual viewport instance after every enhancement bundle so
+  // late compatibility passes never bind to a different Three.js instance.
+  const footer = guardViewport ? '}' : 'window.THREE = window.EPH_THREE || window.THREE;';
 
   const options = {
     outfile,
@@ -46,7 +46,7 @@ async function bundleOne(sourceName, outputName, guardViewport) {
     minify: false,
     legalComments: 'none',
     banner: { js: banner },
-    footer: footer ? { js: footer } : undefined,
+    footer: { js: footer },
     logLevel: 'silent'
   };
 
