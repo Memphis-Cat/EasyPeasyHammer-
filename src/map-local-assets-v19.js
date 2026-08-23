@@ -56,22 +56,53 @@
     return localTextureCache.get(cacheKey);
   }
 
+  function isShaderOnlyMaterial(resource) {
+    const value = String(resource || '').replace(/\\/g, '/').toLowerCase();
+    return /(?:^|\/)(?:blur|dof2|vt_debug_imgui|renderavi)\.vmat$/.test(value)
+      || /\/dev\/(?:blur|dof|postprocess|screen|renderavi)/.test(value);
+  }
+
+  function isExplicitErrorMaterial(resource) {
+    const value = String(resource || '').replace(/\\/g, '/').toLowerCase();
+    return value === 'error' || value === 'materials/error.vmat' || /(?:^|\/)error\.vmat$/.test(value);
+  }
+
   async function materialFor(viewport, THREE, resource) {
     const materialPath = String(resource || 'ERROR');
+    if (isShaderOnlyMaterial(materialPath)) {
+      const hidden = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        colorWrite: false,
+        side: THREE.DoubleSide,
+      });
+      hidden.userData.resource = materialPath;
+      hidden.userData.ephShaderOnly = true;
+      return hidden;
+    }
+
     let texture = null;
-    if (materialPath !== 'ERROR') {
+    if (!isExplicitErrorMaterial(materialPath)) {
       try { texture = await viewport.loadMaterialTexture(materialPath); }
       catch {}
     }
+
+    const explicitError = isExplicitErrorMaterial(materialPath);
+    const fallbackColor = !explicitError && viewport.hashColor ? viewport.hashColor(materialPath) : 0xffffff;
     const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
+      color: texture ? 0xffffff : fallbackColor,
       roughness: 0.8,
       metalness: 0.02,
       side: THREE.DoubleSide,
-      map: texture || viewport.errorTexture || null,
+      map: texture || (explicitError ? viewport.errorTexture || null : null),
     });
     material.userData.resource = materialPath;
-    if (!texture && materialPath !== 'ERROR') report('warning', `Material for map-local model could not be previewed: ${materialPath}`);
+    material.userData.ephPreviewMissing = Boolean(!texture && !explicitError);
+    if (!texture && !explicitError) {
+      report('normal', `Shader/material has no preview image; using a neutral editor fallback instead of ERROR: ${materialPath}`);
+    }
     return material;
   }
 
