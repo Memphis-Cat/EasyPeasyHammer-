@@ -6,7 +6,9 @@
   window.__ephLargeMapSpatialV19 = true;
 
   const api = window.easyPeasyHammer;
-  let installed = false;
+  let lastStream = null;
+  let lastHealth = '';
+  let lastHealthAt = 0;
 
   function log(level, message, meta = null) {
     const method = level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info';
@@ -31,9 +33,10 @@
   }
 
   function install() {
-    if (installed) return true;
     const stream = window.EPH_LARGE_STREAM;
-    if (!stream?.open || stream.open.__ephSpatialV19) return false;
+    if (!stream?.open) return false;
+    if (stream === lastStream && stream.open.__ephSpatialV19) return true;
+    if (stream.open.__ephSpatialV19) { lastStream = stream; return true; }
 
     const rawOpen = stream.open.bind(stream);
     stream.open = async function(rawLoad, project, decoded, ui) {
@@ -46,14 +49,15 @@
           if (spatial?.ok && Array.isArray(spatial.entries)) {
             const fixed = withSpatialPositions(spatial.entries);
             prepared = { ...decoded, largeMapEntries: fixed.entries, ephSpatialIndex: true };
-            log('normal', `Using real mesh bounds for ${fixed.bounded.toLocaleString()} streamed meshes.`, {
+            log(fixed.bounded ? 'normal' : 'error', `Using real mesh bounds for ${fixed.bounded.toLocaleString()} streamed meshes.`, {
               indexed: fixed.entries.length,
               bounded: fixed.bounded,
+              meshCount: spatial.meshCount,
               cached: Boolean(spatial.cached),
               elapsedMs: Math.round(performance.now() - started),
             });
           } else {
-            log('warning', `Spatial index unavailable; continuing with conservative fallback.`, { error: spatial?.error || 'unknown error' });
+            log('warning', 'Spatial index unavailable; continuing with conservative fallback.', { error: spatial?.error || 'unknown error' });
           }
         } catch (error) {
           log('error', 'Could not build streamed-map spatial index.', error?.stack || error?.message || String(error));
@@ -62,15 +66,36 @@
       return rawOpen(rawLoad, project, prepared, ui);
     };
     stream.open.__ephSpatialV19 = true;
-    installed = true;
+    stream.open.__ephSpatialRawOpen = rawOpen;
+    lastStream = stream;
+    log('normal', 'Spatial culling wrapper attached to large-map streamer.');
     return true;
   }
 
-  if (!install()) {
-    const timer = setInterval(() => {
-      if (install()) clearInterval(timer);
-    }, 100);
-    setTimeout(() => clearInterval(timer), 15000);
-    window.addEventListener('eph3d-ready', install);
+  function health() {
+    install();
+    const stream = window.EPH_LARGE_STREAM;
+    if (!stream?.active?.()) return;
+    const state = stream.state?.() || {};
+    const signature = `${state.loaded || 0}/${state.entries || 0}/${state.pending || 0}`;
+    const now = Date.now();
+    if (signature === lastHealth && now - lastHealthAt < 10000) return;
+    lastHealth = signature;
+    lastHealthAt = now;
+    const resident = Number(state.loaded || 0);
+    const indexed = Number(state.entries || 0);
+    const pending = Number(state.pending || 0);
+    const level = indexed > 1000 && resident <= 1 && pending === 0 ? 'warning' : 'normal';
+    log(level, `Stream health: ${resident.toLocaleString()} resident / ${indexed.toLocaleString()} indexed (${pending.toLocaleString()} pending).`, {
+      selectedId: typeof S !== 'undefined' ? S?.selectedId || null : null,
+      camera: typeof S !== 'undefined' && S?.viewport?.camera ? S.viewport.camera.position.toArray().map(value => Number(value.toFixed(1))) : null,
+    });
   }
+
+  install();
+  const attachTimer = setInterval(install, 500);
+  const healthTimer = setInterval(health, 2500);
+  attachTimer.unref?.();
+  healthTimer.unref?.();
+  window.addEventListener('eph3d-ready', install);
 })();
