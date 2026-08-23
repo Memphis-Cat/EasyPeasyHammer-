@@ -22,9 +22,11 @@
     style.id = 'ephTransformPrecisionV23Style';
     style.textContent = `
       .eph-transform-option input#ephMoveSnap,
-      #ephScaleV21 input#ephScaleStep{width:72px!important;min-width:72px;height:30px;background:#0b0c0e;color:#eee;border:1px solid #34383e;border-radius:3px;padding:0 6px;outline:none;font:12px "Segoe UI",Arial,sans-serif}
+      #ephScaleV21 input#ephScaleStep,
+      .status-select input#angleSnap{width:72px!important;min-width:72px;height:30px;background:#0b0c0e;color:#eee;border:1px solid #34383e;border-radius:3px;padding:0 6px;outline:none;font:12px "Segoe UI",Arial,sans-serif}
       .eph-transform-option input#ephMoveSnap:focus,
-      #ephScaleV21 input#ephScaleStep:focus{border-color:#6b747e}
+      #ephScaleV21 input#ephScaleStep:focus,
+      .status-select input#angleSnap:focus{border-color:#6b747e}
       #ephScaleV21 .eph-scale-grid-button{height:30px;padding:0 7px;border:1px solid #34383e;border-radius:3px;background:#111317;color:#ddd;cursor:pointer}
       #ephScaleV21 .eph-scale-grid-button:hover{background:#1a1d22}
     `;
@@ -113,6 +115,37 @@
     return true;
   }
 
+  function installAngleInput() {
+    const old = document.getElementById('angleSnap');
+    if (!old) return false;
+    if (old.tagName === 'INPUT' && old.dataset.ephPrecisionV23 === '1') return true;
+    const input = document.createElement('input');
+    input.id = 'angleSnap';
+    input.type = 'number';
+    input.min = String(MIN_STEP);
+    input.step = 'any';
+    input.inputMode = 'decimal';
+    input.dataset.ephPrecisionV23 = '1';
+    input.value = String(cleanStep(state()?.angleSnap, 15));
+    input.title = 'Exact rotation snap in degrees. Any positive decimal is allowed.';
+    const apply = () => {
+      const s = state();
+      const value = cleanStep(input.value, cleanStep(s?.angleSnap, 15));
+      input.value = String(value);
+      if (s) s.angleSnap = value;
+      const vp = viewport || s?.viewport || window.EPH3D;
+      vp?.setSnap?.(s?.snap !== false, s?.gridSize || 64, value);
+      vp?.updateSnaps?.();
+    };
+    input.onchange = apply;
+    input.onblur = apply;
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); apply(); input.blur(); }
+    });
+    old.replaceWith(input);
+    return true;
+  }
+
   function installPropertyPrecision(root = document) {
     root.querySelectorAll?.('.prop-value[data-key="position"], .prop-value[data-key="size"], .prop-value[data-key="scale"]').forEach(input => {
       input.step = 'any';
@@ -149,12 +182,32 @@
     return true;
   }
 
+  function installRenderControlGuard() {
+    if (typeof renderViewportControls !== 'function' || renderViewportControls.__ephPrecisionV23) return;
+    const raw = renderViewportControls;
+    const wrapped = function() {
+      const result = raw();
+      const angle = document.getElementById('angleSnap');
+      if (angle?.tagName === 'INPUT') angle.value = String(cleanStep(state()?.angleSnap, 15));
+      installMoveInput();
+      installScaleInput();
+      installAngleInput();
+      return result;
+    };
+    wrapped.__ephPrecisionV23 = true;
+    wrapped.__ephPrevious = raw;
+    renderViewportControls = wrapped;
+    window.renderViewportControls = wrapped;
+  }
+
   function install() {
     ensureStyle();
     installViewport(window.EPH3D || state()?.viewport);
     installMoveInput();
     installScaleInput();
+    installAngleInput();
     installPropertyPrecision();
+    installRenderControlGuard();
   }
 
   install();
@@ -168,8 +221,9 @@
     }
     installMoveInput();
     installScaleInput();
+    installAngleInput();
   }).observe(document.body, { childList: true, subtree: true });
   const timer = setInterval(install, 300);
   setTimeout(() => clearInterval(timer), 30000);
-  console.info('[Transform Precision V23] Arbitrary decimal move/size precision installed.');
+  console.info('[Transform Precision V23] Arbitrary decimal move/size/rotation precision installed.');
 })();
