@@ -7,6 +7,7 @@
   const api = window.easyPeasyHammer;
   const cache = new Map();
   const unavailable = new Set();
+  let installed = false;
 
   function projectPath() {
     return String((typeof S !== 'undefined' ? S?.project?.vmapPath : '') || window.S?.project?.vmapPath || '');
@@ -50,9 +51,9 @@
   }
 
   function install() {
+    if (installed) return true;
     const vp = window.EPH3D || (typeof S !== 'undefined' ? S?.viewport : null);
     if (!vp?.loadMaterialTexture || !vp.textureLoader) return false;
-    if (vp.loadMaterialTexture.__ephMapLocalFastV21) return true;
     const raw = vp.loadMaterialTexture.bind(vp);
     const wrapped = async function(resource) {
       const normalized = clean(resource);
@@ -66,12 +67,16 @@
     wrapped.__ephMapLocalFastV21 = true;
     wrapped.__ephPrevious = raw;
     vp.loadMaterialTexture = wrapped;
-    report('normal', 'Map-local-first material resolver installed.');
+    installed = true;
+    report('normal', 'Map-local-first material resolver installed once.');
     return true;
   }
 
-  install();
-  const timer = setInterval(install, 250);
-  setTimeout(() => clearInterval(timer), 20000);
-  window.addEventListener('eph3d-ready', install);
+  if (!install()) {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (install() || Date.now() - started > 5000) clearInterval(timer);
+    }, 250);
+  }
+  window.addEventListener('eph3d-ready', () => { if (!installed) install(); }, { once: true });
 })();
