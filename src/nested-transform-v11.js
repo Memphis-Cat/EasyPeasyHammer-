@@ -140,11 +140,41 @@ function localToWorldObject(doc, object, parentById) {
   return object;
 }
 
+function annotateChildSafety(doc, object) {
+  if (!object?.dmxId) return;
+  const element = VMAP.findElementByDmxId?.(doc, object.dmxId) || VMAP.resolveElement?.(doc, object.dmxId);
+  if (!element || !ary(element, 'children').length) return;
+  object.sourceHasNestedChildren = true;
+  object.sourceHierarchyWorldPosition = clone3(object.position, 0);
+  object.sourceHierarchyWorldRotation = clone3(object.rotation, 0);
+  object.sourceHierarchyWorldScale = clone3(object.scale, 1);
+}
+
+function parentTransformWasEdited(object) {
+  if (!object?.sourceHasNestedChildren) return false;
+  return !same3(object.position, object.sourceHierarchyWorldPosition)
+    || !same3(object.rotation, object.sourceHierarchyWorldRotation)
+    || !same3(object.scale, object.sourceHierarchyWorldScale);
+}
+
+function refreshParentBaseline(object) {
+  if (!object?.sourceHasNestedChildren) return;
+  object.sourceHierarchyWorldPosition = clone3(object.position, 0);
+  object.sourceHierarchyWorldRotation = clone3(object.rotation, 0);
+  object.sourceHierarchyWorldScale = clone3(object.scale, 1);
+}
+
 function worldTransformWasEdited(object) {
   if (!object?.sourceNestedTransform) return false;
   return !same3(object.position, object.sourceWorldPosition)
     || !same3(object.rotation, object.sourceWorldRotation)
     || !same3(object.scale, object.sourceWorldScale);
+}
+
+function ensureParentTransformSafe(object) {
+  if (!parentTransformWasEdited(object)) return true;
+  object.vmapCompatibilityError = 'This imported Hammer node owns nested children. Its hierarchy is preserved in the VMAP but displayed flat in EasyPeasyHammer, so changing the parent transform is blocked to prevent silently moving or rescaling its children. Edit the child objects instead, or move the hierarchy in Hammer.';
+  return false;
 }
 
 function setLocalForWrite(doc, object, parentById) {
@@ -190,13 +220,26 @@ if (VMAP && !VMAP.__ephNestedTransformV11) {
   VMAP.extractObjects = function(doc) {
     const objects = previousExtract(doc);
     const parents = buildParentMap(doc);
-    for (const object of objects || []) localToWorldObject(doc, object, parents);
+    for (const object of objects || []) {
+      localToWorldObject(doc, object, parents);
+      annotateChildSafety(doc, object);
+    }
     return objects;
   };
 
   const previousApply = VMAP.applyObjectToDocument.bind(VMAP);
   VMAP.applyObjectToDocument = function(doc, object) {
-    if (!object?.sourceNestedTransform || object.__ephNestedLocalPass) return previousApply(doc, object);
+    if (!object?.dmxId) return previousApply(doc, object);
+    if (!object.__ephNestedLocalPass && !ensureParentTransformSafe(object)) return false;
+    if (!object.sourceNestedTransform || object.__ephNestedLocalPass) {
+      const result = previousApply(doc, object);
+      if (result) {
+        delete object.vmapCompatibilityError;
+        refreshParentBaseline(object);
+      }
+      return result;
+    }
+
     const parents = buildParentMap(doc);
     const local = setLocalForWrite(doc, object, parents);
     if (local === false) return false;
@@ -206,7 +249,10 @@ if (VMAP && !VMAP.__ephNestedTransformV11) {
       const result = previousApply(doc, object);
       restoreWorldFromCurrentLocal(doc, object, parents);
       restored = true;
-      if (result) delete object.vmapCompatibilityError;
+      if (result) {
+        delete object.vmapCompatibilityError;
+        refreshParentBaseline(object);
+      }
       return result;
     } finally {
       delete object.__ephNestedLocalPass;
@@ -219,7 +265,9 @@ if (VMAP && !VMAP.__ephNestedTransformV11) {
     const parents = buildParentMap(doc);
     const nested = [];
     for (const object of objects || []) {
-      if (!object?.sourceNestedTransform) continue;
+      if (!object?.dmxId) continue;
+      if (!ensureParentTransformSafe(object)) throw new Error(object.vmapCompatibilityError);
+      if (!object.sourceNestedTransform) continue;
       const local = setLocalForWrite(doc, object, parents);
       if (local === false) throw new Error(object.vmapCompatibilityError || 'A nested Hammer transform could not be preserved.');
       object.__ephNestedLocalPass = true;
@@ -231,6 +279,7 @@ if (VMAP && !VMAP.__ephNestedTransformV11) {
       for (const object of nested) {
         delete object.__ephNestedLocalPass;
         restoreWorldFromCurrentLocal(doc, object, parents);
+        refreshParentBaseline(object);
       }
     }
   };
@@ -241,5 +290,6 @@ window.EPH_NESTED_TRANSFORM_V11 = {
   parentWorldMatrix,
   localMatrixFromValues,
   decomposeMatrix,
-  worldTransformWasEdited
+  worldTransformWasEdited,
+  parentTransformWasEdited
 };
