@@ -176,9 +176,7 @@
   }
 
   install();
-  const timer = setInterval(() => {
-    if (install()) clearInterval(timer);
-  }, 250);
+  const timer = setInterval(install, 250);
   setTimeout(() => clearInterval(timer), 20000);
   window.addEventListener('eph3d-ready', install);
 })();
