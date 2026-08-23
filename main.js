@@ -12,6 +12,7 @@ let chatWindow = null;
 let lastRendererSnapshot = null;
 let assetHost = null;
 const APP_FOLDER = 'EasyPeasyHammer';
+const BACKUP_LIMIT = 60;
 
 registerAppServices({ ipcMain, app });
 
@@ -57,13 +58,29 @@ function projectFromPath(vmapPath, type = 'existing-vmap') {
   return { id: `vmap:${vmapPath}`, type, name: path.basename(vmapPath, path.extname(vmapPath)), vmapPath, projectFolder: path.dirname(vmapPath), createdAt: type === 'new-project' ? new Date().toISOString() : null, openedAt: new Date().toISOString() };
 }
 
+function uiStateForDisk(vmapPath, autosave) {
+  if (!autosave?.uiState) return null;
+  try {
+    const diskModified = fs.statSync(vmapPath).mtimeMs;
+    const autosaveTime = Date.parse(autosave.savedAt || '') || 0;
+    if (diskModified <= autosaveTime + 1000) return autosave.uiState;
+    const ui = structuredClone(autosave.uiState);
+    delete ui.vmapText;
+    delete ui.objectExtras;
+    return ui;
+  } catch {
+    return autosave.uiState;
+  }
+}
+
 async function openExistingVmap() {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Open existing VMAP', properties: ['openFile'], filters: [{ name: 'Valve Map', extensions: ['vmap'] }, { name: 'All Files', extensions: ['*'] }] });
   if (result.canceled || !result.filePaths[0]) return null;
   const project = projectFromPath(result.filePaths[0]);
   const autosave = getProjectAutosave(project);
-  saveSession(project, autosave?.uiState || null);
-  return { project, uiState: autosave?.uiState || null };
+  const uiState = uiStateForDisk(project.vmapPath, autosave);
+  saveSession(project, uiState);
+  return { project, uiState };
 }
 
 async function createNewProject(event, projectName) {
@@ -106,6 +123,18 @@ function loadVmap(vmapPath) {
   } catch (error) { return { ok: false, error: error.message }; }
 }
 
+function pruneBackups(folder) {
+  try {
+    const files = fs.readdirSync(folder)
+      .filter(name => name.toLowerCase().endsWith('.vmap'))
+      .map(name => ({ path: path.join(folder, name), mtime: fs.statSync(path.join(folder, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const item of files.slice(BACKUP_LIMIT)) {
+      try { fs.rmSync(item.path, { force: true }); } catch {}
+    }
+  } catch {}
+}
+
 function createBackup(vmapPath) {
   if (!fs.existsSync(vmapPath)) return null;
   const folder = getBackupFolderForVmap(vmapPath);
@@ -113,21 +142,35 @@ function createBackup(vmapPath) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = path.join(folder, `${path.basename(vmapPath, '.vmap')}_${stamp}.vmap`);
   fs.copyFileSync(vmapPath, backupPath);
+  pruneBackups(folder);
   return backupPath;
 }
 
 function saveVmap(vmapPath, text, makeBackup = true) {
+  let tempPath = null;
   try {
     if (!vmapPath) return { ok: false, error: 'Missing VMAP path.' };
     if (path.extname(vmapPath).toLowerCase() !== '.vmap') return { ok: false, error: 'Only .vmap files can be written.' };
     if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'VMAP data is empty.' };
     ensureFolder(path.dirname(vmapPath));
     const backupPath = makeBackup ? createBackup(vmapPath) : null;
-    const tempPath = `${vmapPath}.eph-tmp`;
+    tempPath = `${vmapPath}.eph-tmp`;
     fs.writeFileSync(tempPath, text, 'utf8');
-    fs.renameSync(tempPath, vmapPath);
+    try {
+      fs.renameSync(tempPath, vmapPath);
+      tempPath = null;
+    } catch (error) {
+      if (!fs.existsSync(vmapPath)) throw error;
+      fs.copyFileSync(tempPath, vmapPath);
+      fs.rmSync(tempPath, { force: true });
+      tempPath = null;
+    }
     return { ok: true, backupPath, bytes: Buffer.byteLength(text, 'utf8') };
-  } catch (error) { return { ok: false, error: error.message }; }
+  } catch (error) {
+    return { ok: false, error: error.message };
+  } finally {
+    if (tempPath) try { fs.rmSync(tempPath, { force: true }); } catch {}
+  }
 }
 
 function createMainWindow() {
@@ -164,7 +207,6 @@ function createChatWindow() {
     autoHideMenuBar: true,
     frame: false,
     show: false,
-    parent: mainWindow || undefined,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   chatWindow.loadFile(path.join(__dirname, 'src', 'chat.html'));
@@ -198,12 +240,14 @@ async function launchWorkshopTools() {
 app.whenReady().then(async () => {
   ensureFolder(getAutosavesRoot());
   ensureFolder(getBackupsRoot());
-  ensureFolder(getProjectsRoot());
   const assetConfig = safeReadJson(getAssetConfigFile(), {});
   assetHost = new AssetHost({ cacheRoot: path.join(app.getPath('userData'), 'AssetCache'), cs2Path: assetConfig?.cs2Root || null });
   assetHost.start();
   createMainWindow();
   app.on('activate', () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); });
+}).catch(async error => {
+  try { await dialog.showMessageBox({ type: 'error', title: 'EasyPeasyHammer startup failed', message: error.message }); } catch {}
+  app.quit();
 });
 
 app.on('window-all-closed', () => { assetHost?.stop(); if (process.platform !== 'darwin') app.quit(); });
