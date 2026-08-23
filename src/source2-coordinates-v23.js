@@ -18,6 +18,16 @@
     if (Math.abs(angle) < 1e-7) angle = 0;
     return Number(angle.toFixed(6));
   };
+  const chainHas = (fn, marker) => {
+    const seen = new Set();
+    let current = fn;
+    for (let i = 0; current && typeof current === 'function' && i < 32 && !seen.has(current); i++) {
+      if (current[marker]) return true;
+      seen.add(current);
+      current = current.__ephPrevious;
+    }
+    return false;
+  };
 
   // Source 2 QAngle is Pitch/Yaw/Roll, rotating around Y/Z/X respectively.
   // Build Rz(yaw) * Ry(pitch) * Rx(roll), matching Source/Hammer semantics.
@@ -36,8 +46,6 @@
   function quaternionToQAngle(quaternion) {
     const THREE = THREE_NOW();
     if (!THREE || !quaternion) return [0, 0, 0];
-    // Three's ZYX decomposition returns X=roll, Y=pitch, Z=yaw for the
-    // Rz * Ry * Rx matrix above.
     const euler = new THREE.Euler().setFromQuaternion(quaternion.clone().normalize(), 'ZYX');
     return [
       normalizeDegree(euler.y * DEG),
@@ -49,9 +57,6 @@
   function legacyEulerToQAngle(angles) {
     const THREE = THREE_NOW();
     if (!THREE) return Array.isArray(angles) ? [...angles] : [0, 0, 0];
-    // Old EPH treated the stored three values as Three XYZ Euler angles.
-    // Convert the exact old visual orientation to the Source 2 QAngle that
-    // produces the same orientation in Hammer.
     const euler = new THREE.Euler(
       finite(angles?.[0]) * RAD,
       finite(angles?.[1]) * RAD,
@@ -104,7 +109,6 @@
     };
     viewport.syncSelectedFromRoot.__ephSource2QAngleV23 = true;
 
-    // Existing roots may have been created before this pass installed.
     for (const object of viewport.objects || []) {
       const root = viewport.objectRoots?.get?.(object.id);
       if (root) viewport.applyTransform(root, object);
@@ -139,15 +143,13 @@
     if (changed) {
       markDirty?.(`Migrated ${changed} legacy rotation${changed === 1 ? '' : 's'} to Source 2 QAngle`);
       console.info(`[Coordinates V23] Migrated ${changed} legacy EPH rotations for Hammer compatibility.`);
-    } else {
-      autosave?.();
-    }
+    } else autosave?.();
     return true;
   }
 
   function installLoadProjectMigration() {
     if (typeof loadProject !== 'function') return false;
-    if (loadProject === loadProjectWrapped || loadProject.__ephSource2CoordinateMigrationV23) return true;
+    if (chainHas(loadProject, '__ephSource2CoordinateMigrationV23')) return true;
     const raw = loadProject;
     const wrapped = async function(project, ui) {
       const result = await raw(project, ui);
@@ -166,7 +168,7 @@
   // pass. Convert only those generated decal rotations before they enter VMAP.
   function installDecalCreationBridge() {
     const VMAP = window.EPH_VMAP;
-    if (!VMAP?.addPart || VMAP.addPart.__ephSource2DecalV23) return Boolean(VMAP?.addPart);
+    if (!VMAP?.addPart || chainHas(VMAP.addPart, '__ephSource2DecalV23')) return Boolean(VMAP?.addPart);
     const raw = VMAP.addPart.bind(VMAP);
     const wrapped = function(doc, options = {}) {
       if (/^EPH_DECAL_/i.test(String(options?.meshName || '')) && Array.isArray(options.rotation)) {
@@ -175,6 +177,7 @@
       return raw(doc, options);
     };
     wrapped.__ephSource2DecalV23 = true;
+    wrapped.__ephPrevious = VMAP.addPart;
     VMAP.addPart = wrapped;
     return true;
   }
