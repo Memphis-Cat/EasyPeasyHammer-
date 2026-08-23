@@ -34,6 +34,30 @@
 
   const list = section.querySelector('#ephRecentMapsList');
   let renderToken = 0;
+  let pendingDelete = null;
+
+  const deleteDialog = document.createElement('dialog');
+  deleteDialog.id = 'ephDeleteMapDialog';
+  deleteDialog.className = 'eph-delete-map-dialog';
+  deleteDialog.innerHTML = `
+    <form class="eph-delete-map-card" method="dialog">
+      <h2>Delete map?</h2>
+      <p id="ephDeleteMapName" class="eph-delete-map-name"></p>
+      <p id="ephDeleteMapPath" class="eph-delete-map-path"></p>
+      <div class="eph-delete-map-warning">
+        This moves the map to the Windows Recycle Bin. If it is an EasyPeasyHammer project, its whole project folder is moved. If it is an external VMAP, only that VMAP file is moved.
+      </div>
+      <div class="modal-actions">
+        <button id="ephDeleteMapCancel" type="button" class="secondary-button">Cancel</button>
+        <button id="ephDeleteMapConfirm" type="button" class="eph-delete-danger">Delete map</button>
+      </div>
+    </form>`;
+  document.body.appendChild(deleteDialog);
+
+  const deleteName = deleteDialog.querySelector('#ephDeleteMapName');
+  const deletePath = deleteDialog.querySelector('#ephDeleteMapPath');
+  const deleteCancel = deleteDialog.querySelector('#ephDeleteMapCancel');
+  const deleteConfirm = deleteDialog.querySelector('#ephDeleteMapConfirm');
 
   function hideLegacySingleMapUi() {
     legacyResume?.classList.add('hidden');
@@ -78,6 +102,50 @@
     }
   }
 
+  function askDelete(entry) {
+    const project = entry?.project;
+    if (!project?.vmapPath) return;
+    pendingDelete = entry;
+    deleteName.textContent = `${project.name || 'Untitled'}.vmap`;
+    deletePath.textContent = project.vmapPath;
+    if (!deleteDialog.open) deleteDialog.showModal();
+  }
+
+  async function deletePending() {
+    const entry = pendingDelete;
+    const vmapPath = entry?.project?.vmapPath;
+    if (!vmapPath) return;
+    deleteConfirm.disabled = true;
+    deleteCancel.disabled = true;
+    try {
+      const result = await api.deleteRecentProject?.(vmapPath);
+      if (!result?.ok) {
+        window.toast?.(result?.error || 'Could not delete that map');
+        return;
+      }
+      pendingDelete = null;
+      deleteDialog.close();
+      window.toast?.(result.deletedProjectFolder ? 'Project moved to Recycle Bin' : 'VMAP moved to Recycle Bin');
+      await renderRecentMaps();
+    } catch (error) {
+      window.toast?.(error?.message || 'Could not delete that map');
+    } finally {
+      deleteConfirm.disabled = false;
+      deleteCancel.disabled = false;
+    }
+  }
+
+  deleteCancel.onclick = () => {
+    pendingDelete = null;
+    deleteDialog.close();
+  };
+  deleteConfirm.onclick = deletePending;
+  deleteDialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    pendingDelete = null;
+    deleteDialog.close();
+  });
+
   async function renderRecentMaps() {
     hideLegacySingleMapUi();
     const token = ++renderToken;
@@ -98,6 +166,9 @@
 
     for (const entry of projects) {
       const project = entry.project || {};
+      const row = document.createElement('div');
+      row.className = 'eph-recent-map-row';
+
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'eph-recent-map';
@@ -119,7 +190,17 @@
       time.textContent = timeLabel(entry.savedAt);
       button.append(main, time);
       button.onclick = () => openRecent(entry, button);
-      list.appendChild(button);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'eph-recent-map-delete';
+      remove.tabIndex = -1;
+      remove.textContent = 'Delete';
+      remove.title = `Delete ${project.name || 'map'}`;
+      remove.onclick = () => askDelete(entry);
+
+      row.append(button, remove);
+      list.appendChild(row);
     }
   }
 
