@@ -52,8 +52,19 @@
 
   function visibleTreeObjects() {
     const query = String(document.getElementById('sceneSearch')?.value || '').trim().toLowerCase();
+    const objects = S?.objects || [];
     const result = [];
-    const children = id => (S?.objects || []).filter(object => object.parent === id);
+    // The old implementation called objects.filter() once for every object,
+    // making a 3,800-object Anubis tree roughly O(n²) on every selection. Build
+    // the hierarchy index once so annotation/range selection stays O(n).
+    const byParent = new Map();
+    for (const object of objects) {
+      const key = object.parent == null ? null : object.parent;
+      let list = byParent.get(key);
+      if (!list) { list = []; byParent.set(key, list); }
+      list.push(object);
+    }
+    const children = id => byParent.get(id) || [];
     const include = object => {
       const kids = children(object.id);
       return !query || String(object.name || '').toLowerCase().includes(query) || kids.some(child => String(child.name || '').toLowerCase().includes(query));
@@ -63,7 +74,7 @@
       result.push(object);
       if (object.expanded) for (const child of children(object.id)) walk(child);
     };
-    for (const object of (S?.objects || []).filter(item => item.parent == null)) walk(object);
+    for (const object of byParent.get(null) || []) walk(object);
     return result;
   }
 
@@ -354,14 +365,15 @@
   };
 
   install();
-  const timer = setInterval(() => {
+  // Settle only a few times while project-dialog finishes loading its wrappers.
+  // The old 180 ms / 30 s poll was unnecessary startup work.
+  [500, 1500, 3000].forEach(delay => setTimeout(() => {
     install();
     if (renderTreeWrapped && renderTree !== renderTreeWrapped) installRenderWrappers();
     if (renderPropertiesWrapped && renderProperties !== renderPropertiesWrapped) installRenderWrappers();
     const vp = S?.viewport || window.EPH3D;
     const viewportIds = Array.isArray(vp?.multiSelectedIds) ? vp.multiSelectedIds.filter(selectable) : [];
     if (viewportIds.length > 1 && !idsEqual(viewportIds, currentIds())) setSelection(viewportIds, vp.selectedId || viewportIds[0], { selectViewport: false, render: false });
-  }, 180);
-  setTimeout(() => clearInterval(timer), 30000);
+  }, delay));
   window.addEventListener('eph3d-ready', installViewport);
 })();
