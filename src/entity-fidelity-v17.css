@@ -1,0 +1,7 @@
+/* byanca */
+.eph-fgd-properties { border-top: 1px solid #252525; }
+.eph-fgd-list { display: grid; gap: 5px; margin-top: 8px; }
+.eph-fgd-row { display: grid; grid-template-columns: minmax(94px, 42%) minmax(0, 1fr); gap: 8px; align-items: center; }
+.eph-fgd-row > label { color: #d7d7d7; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eph-fgd-row .prop-input, .eph-fgd-row .prop-select { min-width: 0; }
+.eph-entity-compat-section .eph-entity-kv-row[hidden] { display: none !important; }
