@@ -4,7 +4,10 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 set "EXIT_CODE=0"
 set "DID_STASH=0"
+set "PACKAGE_BEFORE="
+set "PACKAGE_AFTER="
 
+for /f "usebackq delims=" %%H in (`git rev-parse HEAD:package.json 2^>nul`) do set "PACKAGE_BEFORE=%%H"
 for /f "delims=" %%A in ('git status --porcelain 2^>nul') do set "HAS_CHANGES=1"
 
 if defined HAS_CHANGES (
@@ -28,8 +31,28 @@ if "!DID_STASH!"=="1" (
     if errorlevel 1 goto stashconflict
 )
 
+for /f "usebackq delims=" %%H in (`git rev-parse HEAD:package.json 2^>nul`) do set "PACKAGE_AFTER=%%H"
+if not exist "node_modules\ws\package.json" goto dependencies
+if not exist "node_modules\electron-builder\package.json" goto dependencies
+if /i not "!PACKAGE_BEFORE!"=="!PACKAGE_AFTER!" goto dependencies
+goto updated
+
+:dependencies
+echo.
+echo Dependency definitions changed. Updating npm packages...
+call npm install
+if errorlevel 1 goto npmerror
+
+:updated
 echo.
 echo EasyPeasyHammer is up to date.
+goto done
+
+:npmerror
+set "EXIT_CODE=1"
+echo.
+echo Git files are updated, but npm install failed.
+echo Run npm install manually after fixing the npm/network error above.
 goto done
 
 :pullerror
