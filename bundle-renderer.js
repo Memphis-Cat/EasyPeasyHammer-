@@ -13,6 +13,7 @@ const entries = [
   ['hammer-fidelity.js', 'hammer-fidelity.bundle.js', false],
   ['fidelity-v2.js', 'fidelity-v2.bundle.js', false],
   ['texture-projection-v4.js', 'texture-projection-v4.bundle.js', false],
+  ['editor-tools-v6.js', 'editor-tools-v6.bundle.js', false],
   ['collab-visuals.js', 'collab-visuals.bundle.js', false]
 ];
 
