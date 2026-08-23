@@ -15,11 +15,23 @@ const numbers = (value, length, fallback = 0) => {
 };
 const clone3 = (value, fallback = 0) => numbers(value, 3, fallback);
 
+function qAngleQuaternion(rotation) {
+  const r = clone3(rotation, 0);
+  const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), r[1] * RAD);
+  const pitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), r[0] * RAD);
+  const roll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), r[2] * RAD);
+  return yaw.multiply(pitch).multiply(roll).normalize();
+}
+
+function quaternionQAngle(quaternion) {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion.clone().normalize(), 'ZYX');
+  return [euler.y * DEG, euler.z * DEG, euler.x * DEG];
+}
+
 function localMatrixFromValues(position, rotation, scale) {
   const p = clone3(position, 0);
-  const r = clone3(rotation, 0);
   const s = clone3(scale, 1);
-  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0] * RAD, r[1] * RAD, r[2] * RAD, 'XYZ'));
+  const quaternion = qAngleQuaternion(rotation);
   return new THREE.Matrix4().compose(new THREE.Vector3(...p), quaternion, new THREE.Vector3(...s));
 }
 
@@ -36,10 +48,9 @@ function decomposeMatrix(matrix) {
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   matrix.decompose(position, quaternion, scale);
-  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
   return {
     position: [position.x, position.y, position.z],
-    rotation: [euler.x * DEG, euler.y * DEG, euler.z * DEG],
+    rotation: quaternionQAngle(quaternion),
     scale: [scale.x, scale.y, scale.z]
   };
 }
