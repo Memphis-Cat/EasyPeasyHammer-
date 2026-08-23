@@ -7,8 +7,8 @@
   const MOVE_KEY = 'eph-move-snap';
   const SCALE_KEY = 'eph-scale-step-v21';
   const MIN_STEP = 0.0001;
+  const RAD = Math.PI / 180;
   let viewport = null;
-  let updateSnapsWrapped = null;
 
   const state = () => typeof S !== 'undefined' ? S : window.S;
   const cleanStep = (value, fallback = 1) => {
@@ -39,6 +39,20 @@
     return cleanStep(viewport?.moveSnap, 1);
   }
 
+  function applyPrecisionSnaps(vp = viewport || state()?.viewport || window.EPH3D) {
+    if (!vp?.transform) return false;
+    viewport = vp;
+    const s = state();
+    const move = moveStep();
+    const angle = cleanStep(s?.angleSnap ?? vp.angleSnap, 15);
+    vp.moveSnap = move;
+    vp.angleSnap = angle;
+    vp.transform.setTranslationSnap?.(vp.snap ? move : null);
+    vp.transform.setRotationSnap?.(vp.snap ? angle * RAD : null);
+    if (vp.tool === 'scale') vp.transform.setScaleSnap?.(null);
+    return true;
+  }
+
   function installMoveInput() {
     const old = document.getElementById('ephMoveSnap');
     if (!old) return false;
@@ -54,11 +68,7 @@
       const value = cleanStep(input.value, moveStep());
       input.value = String(value);
       localStorage.setItem(MOVE_KEY, String(value));
-      const vp = viewport || state()?.viewport || window.EPH3D;
-      if (vp) {
-        vp.moveSnap = value;
-        vp.updateSnaps?.();
-      }
+      applyPrecisionSnaps();
     };
     input.onchange = apply;
     input.onblur = apply;
@@ -90,6 +100,7 @@
       const value = cleanStep(input.value, 1);
       input.value = String(value);
       localStorage.setItem(SCALE_KEY, String(value));
+      applyPrecisionSnaps();
     };
     input.onchange = apply;
     input.onblur = apply;
@@ -109,6 +120,7 @@
         const value = cleanStep(state()?.gridSize, 64);
         input.value = String(value);
         localStorage.setItem(SCALE_KEY, String(value));
+        applyPrecisionSnaps();
       };
       input.after(button);
     }
@@ -135,7 +147,7 @@
       if (s) s.angleSnap = value;
       const vp = viewport || s?.viewport || window.EPH3D;
       vp?.setSnap?.(s?.snap !== false, s?.gridSize || 64, value);
-      vp?.updateSnaps?.();
+      applyPrecisionSnaps(vp);
     };
     input.onchange = apply;
     input.onblur = apply;
@@ -157,28 +169,28 @@
       input.setAttribute('step', 'any');
       input.inputMode = 'decimal';
       input.title = ['Pitch — rotates around Source 2 Y', 'Yaw — rotates around Source 2 Z', 'Roll — rotates around Source 2 X'][Number(input.dataset.i) || index] || 'Source 2 rotation';
+      const row = input.closest('.xyz-row');
+      const label = row?.querySelector('label');
+      if (label && !label.dataset.ephQAngleV23) {
+        label.dataset.ephQAngleV23 = '1';
+        label.textContent = 'Rotation P/Y/R';
+        label.title = 'Source 2 QAngle: Pitch around Y, Yaw around Z, Roll around X';
+      }
     });
   }
 
   function installViewport(vp) {
     if (!vp?.transform) return false;
     viewport = vp;
-    vp.moveSnap = moveStep();
-    if (vp.updateSnaps !== updateSnapsWrapped && !vp.updateSnaps.__ephPrecisionV23) {
-      const raw = vp.updateSnaps.bind(vp);
-      const wrapped = function() {
-        const result = raw();
-        const move = cleanStep(localStorage.getItem(MOVE_KEY), cleanStep(this.moveSnap, 1));
-        this.moveSnap = move;
-        this.transform?.setTranslationSnap?.(this.snap ? move : null);
-        return result;
-      };
-      wrapped.__ephPrecisionV23 = true;
-      wrapped.__ephPrevious = raw;
-      vp.updateSnaps = wrapped;
-      updateSnapsWrapped = wrapped;
+    if (!vp.__ephPrecisionEventsV23) {
+      vp.__ephPrecisionEventsV23 = true;
+      const canvas = vp.renderer?.domElement;
+      canvas?.addEventListener('pointerdown', () => applyPrecisionSnaps(vp), true);
+      vp.transform.addEventListener('dragging-changed', event => {
+        if (event.value) applyPrecisionSnaps(vp);
+      });
     }
-    vp.updateSnaps?.();
+    applyPrecisionSnaps(vp);
     return true;
   }
 
@@ -192,6 +204,7 @@
       installMoveInput();
       installScaleInput();
       installAngleInput();
+      applyPrecisionSnaps();
       return result;
     };
     wrapped.__ephPrecisionV23 = true;
@@ -208,6 +221,7 @@
     installAngleInput();
     installPropertyPrecision();
     installRenderControlGuard();
+    applyPrecisionSnaps();
   }
 
   install();
