@@ -6,6 +6,7 @@
 
   let lastSignature = '';
   let lastSent = 0;
+  const HEARTBEAT_MS = 500;
 
   function signature(camera) {
     const values = [...(camera?.position || []), ...(camera?.target || [])];
@@ -19,7 +20,9 @@
       const camera = viewport.getCameraState();
       const next = signature(camera);
       const now = performance.now();
-      if (next && next !== lastSignature && now - lastSent >= 30) {
+      const changed = next && next !== lastSignature;
+      const heartbeat = next && now - lastSent >= HEARTBEAT_MS;
+      if ((changed && now - lastSent >= 30) || heartbeat) {
         lastSignature = next;
         lastSent = now;
         api.collabSendCursor?.({ camera }).catch?.(() => {});
