@@ -39,6 +39,8 @@ select,
 #app {
   width: 100vw;
   height: 100vh;
+  min-width: 0;
+  min-height: 0;
   padding-top: var(--eph-window-bar);
   overflow: hidden;
 }
@@ -47,7 +49,51 @@ select,
 #app > .editor-screen {
   width: 100% !important;
   height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   margin: 0 !important;
+}
+
+/*
+ * The editor is born while it is hidden. Chromium can otherwise resolve the
+ * middle 1fr track to zero and keep that stale size when the screen becomes
+ * visible. Make every link in the vertical grid chain explicitly shrinkable
+ * and give the editor's middle row a zero minimum instead of an intrinsic one.
+ */
+#editorScreen.editor-screen {
+  grid-template-rows: auto minmax(0, 1fr) 36px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#editorScreen > .editor-layout {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+#editorScreen .workspace-column {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  grid-template-rows: minmax(0, 1fr) 205px !important;
+}
+
+#editorScreen .viewport,
+#editorScreen #threeViewport {
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+#editorScreen #threeViewport {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#editorScreen #threeViewport canvas {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 #ephWindowChrome {
