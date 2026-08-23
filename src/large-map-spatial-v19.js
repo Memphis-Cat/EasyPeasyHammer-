@@ -73,13 +73,11 @@
   }
 
   function health() {
-    install();
-    const stream = window.EPH_LARGE_STREAM;
-    if (!stream?.active?.()) return;
-    const state = stream.state?.() || {};
+    if (!window.EPH_LARGE_STREAM?.active?.()) return;
+    const state = window.EPH_LARGE_STREAM.state?.() || {};
     const signature = `${state.loaded || 0}/${state.entries || 0}/${state.pending || 0}`;
     const now = Date.now();
-    if (signature === lastHealth && now - lastHealthAt < 10000) return;
+    if (signature === lastHealth && now - lastHealthAt < 30000) return;
     lastHealth = signature;
     lastHealthAt = now;
     const resident = Number(state.loaded || 0);
@@ -93,9 +91,11 @@
   }
 
   install();
-  const attachTimer = setInterval(install, 500);
-  const healthTimer = setInterval(health, 2500);
-  attachTimer.unref?.();
+  // The streamer arrives asynchronously, but it only needs a few bounded
+  // startup attempts. The old forever 500 ms attach loop kept waking even after
+  // the wrapper had already been installed.
+  [250, 750, 1500, 3000, 5000].forEach(delay => setTimeout(install, delay));
+  const healthTimer = setInterval(health, 10000);
   healthTimer.unref?.();
-  window.addEventListener('eph3d-ready', install);
+  window.addEventListener('eph3d-ready', install, { once: true });
 })();
