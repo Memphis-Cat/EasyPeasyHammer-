@@ -127,6 +127,7 @@
   }
 
   loadPass('large-map-stream-v16.js', '__ephLargeMapStreamV16');
+  loadPass('complex-vmap-v15.js', '__ephComplexVmapV15');
   loadPass('visual-clean-v16.js', '__ephVisualCleanV16');
   loadPass('project-name-guard-v16.js', '__ephProjectNameGuardV16');
   loadPass('diagnostics-v16.js', '__ephDiagnosticsV16');
