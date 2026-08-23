@@ -3,24 +3,33 @@
   if (window.__ephPreAuditV8) return;
   window.__ephPreAuditV8 = true;
 
+  const setText = (element, value) => {
+    if (element && element.textContent !== value) element.textContent = value;
+  };
+
   function removeObsoleteUi() {
     for (const menu of ['buildMenu', 'windowMenu', 'helpMenu']) {
       document.querySelector(`.menu-button[data-menu="${menu}"]`)?.remove();
       document.getElementById(menu)?.remove();
     }
     document.querySelector('[data-bottom-tab="build"]')?.remove();
+
     const hierarchy = document.querySelector('.right-tabs button:nth-child(2)');
     if (hierarchy?.textContent?.trim() === 'Hierarchy') hierarchy.remove();
+
     const status = document.querySelector('.status-dot');
-    if (status) status.title = 'Collaboration available';
+    if (status && status.title !== 'Collaboration available') status.title = 'Collaboration available';
+
     const invite = document.getElementById('ephInviteCode');
     if (invite) {
-      invite.maxLength = 4096;
-      invite.placeholder = 'Paste invite code';
+      if (invite.maxLength !== 4096) invite.maxLength = 4096;
+      if (invite.placeholder !== 'Paste invite code') invite.placeholder = 'Paste invite code';
     }
+
     const hints = document.querySelectorAll('.startup-hint');
-    if (hints[0]) hints[0].textContent = 'Saved locally and used as your collaboration name.';
-    if (hints[1]) hints[1].textContent = 'Enter an invite code from the project owner.';
+    setText(hints[0], 'Saved locally and used as your collaboration name.');
+    setText(hints[1], 'Enter an invite code from the project owner.');
+
     const shared = document.querySelector('.shared-project-placeholder');
     if (shared && /will stay listed|will be able|Phase 4/i.test(shared.textContent || '')) shared.textContent = '';
 
@@ -32,7 +41,14 @@
     }
   }
 
+  // This used to be a document-wide MutationObserver. The callback rewrote
+  // textContent while observing childList changes, which could recursively
+  // schedule itself and starve Chromium's renderer event loop. Run a few
+  // bounded cleanup passes instead; advanced-ui is loaded before this file.
   removeObsoleteUi();
+  setTimeout(removeObsoleteUi, 0);
+  setTimeout(removeObsoleteUi, 250);
+  setTimeout(removeObsoleteUi, 1000);
 
   // Ctrl+R is an editor reload, not a collaboration disconnect. Flush the
   // current map state first, including when an input happens to have focus.
@@ -48,8 +64,4 @@
     try { await window.EPH_COLLAB?.sendSnapshotNow?.(); } catch {}
     location.reload();
   }, true);
-
-  const observer = new MutationObserver(removeObsoleteUi);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(() => observer.disconnect(), 10000);
 })();
