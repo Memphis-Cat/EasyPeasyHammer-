@@ -6,6 +6,8 @@ const { spawn } = require('child_process');
 const { registerCollaboration } = require('./collab-network');
 
 const REMOTE_PACKAGE_URL = 'https://raw.githubusercontent.com/Memphis-Cat/EasyPeasyHammer-/main/package.json';
+const VERSION_SUCCESS_CACHE_MS = 5 * 60 * 1000;
+const VERSION_FAILURE_CACHE_MS = 30 * 1000;
 
 function compareVersions(a, b) {
   const pa = String(a || '0').split('.').map(x => Number.parseInt(x, 10) || 0);
@@ -19,35 +21,47 @@ function compareVersions(a, b) {
   return 0;
 }
 
-function getJson(url, timeout = 8000) {
+function getJson(url, timeout = 8000, redirects = 0) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, {
-      headers: {
-        'User-Agent': 'EasyPeasyHammer-VersionCheck',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      }
-    }, response => {
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        response.resume();
-        return getJson(response.headers.location, timeout).then(resolve, reject);
-      }
-      if (response.statusCode !== 200) {
-        response.resume();
-        reject(new Error(`GitHub returned HTTP ${response.statusCode}`));
-        return;
-      }
-      let body = '';
-      response.setEncoding('utf8');
-      response.on('data', chunk => {
-        body += chunk;
-        if (body.length > 1024 * 1024) request.destroy(new Error('Version response was too large.'));
+    if (redirects > 5) { reject(new Error('Too many redirects during version check.')); return; }
+    let request;
+    try {
+      request = https.get(url, {
+        headers: {
+          'User-Agent': 'EasyPeasyHammer-VersionCheck',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      }, response => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          response.resume();
+          let next;
+          try { next = new URL(response.headers.location, url); }
+          catch { reject(new Error('GitHub returned an invalid redirect.')); return; }
+          if (next.protocol !== 'https:') { reject(new Error('Version check refused a non-HTTPS redirect.')); return; }
+          getJson(next.href, timeout, redirects + 1).then(resolve, reject);
+          return;
+        }
+        if (response.statusCode !== 200) {
+          response.resume();
+          reject(new Error(`GitHub returned HTTP ${response.statusCode}`));
+          return;
+        }
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', chunk => {
+          body += chunk;
+          if (body.length > 1024 * 1024) request.destroy(new Error('Version response was too large.'));
+        });
+        response.on('end', () => {
+          try { resolve(JSON.parse(body)); }
+          catch (error) { reject(new Error(`Invalid GitHub version response: ${error.message}`)); }
+        });
       });
-      response.on('end', () => {
-        try { resolve(JSON.parse(body)); }
-        catch (error) { reject(new Error(`Invalid GitHub version response: ${error.message}`)); }
-      });
-    });
+    } catch (error) {
+      reject(error);
+      return;
+    }
     request.setTimeout(timeout, () => request.destroy(new Error('GitHub version check timed out.')));
     request.on('error', reject);
   });
@@ -69,6 +83,17 @@ function getProfile(app) {
   }
 }
 
+function writeProfileAtomic(file, profile) {
+  const temp = `${file}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(profile, null, 2), 'utf8');
+  try { fs.renameSync(temp, file); }
+  catch {
+    fs.copyFileSync(temp, file);
+    fs.rmSync(temp, { force: true });
+  }
+  try { fs.rmSync(temp, { force: true }); } catch {}
+}
+
 function setProfile(app, username) {
   try {
     const clean = String(username || '').trim().replace(/[\x00-\x1f<>:"/\\|?*]/g, '').slice(0, 32);
@@ -77,7 +102,7 @@ function setProfile(app, username) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const existing = getProfile(app).profile;
     const profile = { username: clean, createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
-    fs.writeFileSync(file, JSON.stringify(profile, null, 2), 'utf8');
+    writeProfileAtomic(file, profile);
     if (process.platform === 'win32') {
       try {
         const child = spawn('attrib', ['+h', file], { detached: true, windowsHide: true, stdio: 'ignore' });
@@ -92,22 +117,27 @@ function setProfile(app, username) {
 
 function registerAppServices({ ipcMain, app }) {
   let versionPromise = null;
+  let versionExpiresAt = 0;
   ipcMain.handle('app:version-status', async () => {
-    if (!versionPromise) {
+    const now = Date.now();
+    if (!versionPromise || now >= versionExpiresAt) {
       versionPromise = (async () => {
         const localVersion = app.getVersion();
         try {
           const remotePackage = await getJson(`${REMOTE_PACKAGE_URL}?t=${Date.now()}`);
           const remoteVersion = String(remotePackage?.version || '');
           if (!remoteVersion) throw new Error('GitHub package.json has no version.');
-          return {
+          const result = {
             ok: true,
             localVersion,
             remoteVersion,
             outdated: compareVersions(localVersion, remoteVersion) < 0,
             newerThanRemote: compareVersions(localVersion, remoteVersion) > 0
           };
+          versionExpiresAt = Date.now() + VERSION_SUCCESS_CACHE_MS;
+          return result;
         } catch (error) {
+          versionExpiresAt = Date.now() + VERSION_FAILURE_CACHE_MS;
           return { ok: false, localVersion, remoteVersion: null, outdated: false, error: error.message };
         }
       })();
