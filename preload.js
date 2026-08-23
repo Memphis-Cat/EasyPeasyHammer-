@@ -40,8 +40,9 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   collabSendChat: (text, replyTo = null) => ipcRenderer.invoke('collab:send-chat', text, replyTo),
   collabPickFile: () => ipcRenderer.invoke('collab:pick-file'),
   collabSendFile: (token, text = '', replyTo = null) => ipcRenderer.invoke('collab:send-file', token, text, replyTo),
-  collabSaveFile: (localPath, suggestedName) => ipcRenderer.invoke('collab:save-file', localPath, suggestedName),
-  collabShowFile: (localPath) => ipcRenderer.invoke('collab:show-file', localPath),
+  collabAttachmentData: (localPath) => ipcRenderer.invoke('collab:attachment-data', localPath),
+  collabSaveFile: (localPath, suggestedName) => ipcRenderer.invoke('collab:save-file-v2', localPath, suggestedName),
+  collabShowFile: (localPath) => ipcRenderer.invoke('collab:show-file-v2', localPath),
   collabListShared: () => ipcRenderer.invoke('collab:list-shared'),
   collabForgetShared: (sessionId) => ipcRenderer.invoke('collab:forget-shared', sessionId),
   onCollaborationEvent: (callback) => {
