@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   materialPreview: (resourcePath) => ipcRenderer.invoke('assets:material-preview', resourcePath),
   modelPreview: (resourcePath) => ipcRenderer.invoke('assets:model-preview', resourcePath),
   mapLocalModel: (vmapPath, resourcePath) => ipcRenderer.invoke('map-local:model', vmapPath, resourcePath),
+  mapLocalMaterial: (vmapPath, resourcePath) => ipcRenderer.invoke('map-local:material', vmapPath, resourcePath),
   getEntityCatalog: () => ipcRenderer.invoke('entities:fgd-catalog'),
   openWorkshopTools: () => ipcRenderer.invoke('tools:open-workshop'),
   openCollaboratorChat: () => ipcRenderer.invoke('collab:open-chat'),
