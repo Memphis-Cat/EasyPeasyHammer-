@@ -9,6 +9,11 @@ call npm install --ignore-scripts
 if errorlevel 1 goto error
 
 echo.
+echo Running editor security/performance self-test...
+node scripts\editor-self-test.js
+if errorlevel 1 goto error
+
+echo.
 echo Running VMAP compatibility self-test...
 node scripts\vmap-self-test.js
 if errorlevel 1 goto error
