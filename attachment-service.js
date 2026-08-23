@@ -2,6 +2,7 @@
 const { BrowserWindow, clipboard, dialog, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { installAttachmentAccess, canAccessAttachment } = require('./attachment-access');
 
 const MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
 const READY_TIMEOUT_MS = 8000;
@@ -53,6 +54,11 @@ async function waitForReadyFile(localPath, expectedSize = null, timeout = READY_
 function registerAttachmentService({ ipcMain, app }) {
   if (globalThis.__ephAttachmentServiceRegistered) return;
   globalThis.__ephAttachmentServiceRegistered = true;
+  installAttachmentAccess({ app });
+
+  const trusted = localPath => canAccessAttachment(localPath)
+    ? null
+    : { ok: false, error: 'Attachment path is not trusted by this collaboration session.' };
 
   ipcMain.handle('app:copy-text', (_event, text) => {
     try {
@@ -66,6 +72,7 @@ function registerAttachmentService({ ipcMain, app }) {
   ipcMain.handle('collab:attachment-data', async (_event, localPath, expectedSize) => {
     try {
       if (!localPath) return { ok: false, error: 'Attachment file is missing.' };
+      const denied = trusted(localPath); if (denied) return denied;
       const ready = await waitForReadyFile(localPath, expectedSize);
       if (!ready.ok) return ready;
       if (ready.stat.size > MAX_PREVIEW_BYTES) return { ok: false, error: 'Image is too large to preview.' };
@@ -81,6 +88,7 @@ function registerAttachmentService({ ipcMain, app }) {
   ipcMain.handle('collab:save-file-v2', async (event, localPath, suggestedName, expectedSize) => {
     try {
       if (!localPath) return { ok: false, error: 'Attachment file is missing.' };
+      const denied = trusted(localPath); if (denied) return denied;
       const ready = await waitForReadyFile(localPath, expectedSize);
       if (!ready.ok) return ready;
       const win = BrowserWindow.fromWebContents(event.sender) || undefined;
@@ -98,6 +106,7 @@ function registerAttachmentService({ ipcMain, app }) {
   ipcMain.handle('collab:show-file-v2', async (_event, localPath, expectedSize) => {
     try {
       if (!localPath) return { ok: false, error: 'Attachment file is missing.' };
+      const denied = trusted(localPath); if (denied) return denied;
       const ready = await waitForReadyFile(localPath, expectedSize);
       if (!ready.ok) return ready;
       shell.showItemInFolder(localPath);
