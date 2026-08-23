@@ -16,6 +16,11 @@ call npm install --ignore-scripts
 if errorlevel 1 goto error
 
 echo.
+echo Running VMAP compatibility self-test...
+node scripts\vmap-self-test.js
+if errorlevel 1 goto error
+
+echo.
 echo Verifying electron-builder version...
 for /f "usebackq delims=" %%V in (`node -p "require('./node_modules/electron-builder/package.json').version" 2^>nul`) do set "EB_VERSION=%%V"
 if not "%EB_VERSION%"=="26.0.11" (
