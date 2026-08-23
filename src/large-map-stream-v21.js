@@ -10,20 +10,20 @@
   const THREE = window.EPH_THREE || window.THREE;
   if (!api || !VMAP || !THREE) return;
 
-  const CELL_SIZE = 1024;
-  const BATCH = 10;
-  const REFRESH_MS = 100;
-  const UNLOAD_MS = 900;
-  const MAX_RESIDENT = 520;
-  const MAX_OCCLUSION_CHECKS = 4;
-  const TREE_DELAY = 1800;
+  const CELL_SIZE = 512;
+  const BATCH = 8;
+  const REFRESH_MS = 160;
+  const UNLOAD_MS = 1800;
+  const MAX_RESIDENT = 320;
+  const TREE_DELAY = 5000;
 
   const st = {
     active: false, token: null, entries: [], byId: new Map(), byDmx: new Map(),
     loaded: new Map(), pending: new Set(), bounds: new Map(), hidden: new Map(),
-    objectById: new Map(), shownProps: new Set(), cells: [], cellMap: new Map(),
+    objectById: new Map(), shownProps: new Set(), cells: [], cellMap: new Map(), sphereData: new Map(),
     refreshTimer: null, treeTimer: null, pumping: false, rawSet: null, rawSave: null,
     rawUi: null, oldPixelRatio: null, refreshCount: 0, lastRefreshMs: 0,
+    frustum: new THREE.Frustum(), projectionMatrix: new THREE.Matrix4(),
   };
 
   const vec = (value, fallback=[0,0,0]) => Array.isArray(value)
@@ -74,22 +74,31 @@
 
   function entrySphereData(entry) {
     const objectId = st.loaded.get(entry.entryId);
-    const cached = objectId && st.bounds.get(objectId);
-    if (cached) return { c: cached.c, r: cached.r };
+    const dynamic = objectId && st.bounds.get(objectId);
+    if (dynamic) return dynamic;
+    let cached = st.sphereData.get(entry.entryId);
+    if (cached) return cached;
     const scale = vec(entry.scale, [1,1,1]);
     const radius = Math.max(8, Number(entry.approxRadius) || (entry.type === 'mesh' ? 512 : 96)) * Math.max(1, ...scale.map(value => Math.abs(value)));
-    return { c: worldPosition(entry), r: radius };
+    const c = worldPosition(entry);
+    const center = new THREE.Vector3(c[0], c[1], c[2]);
+    cached = { c, r: radius, sphere: new THREE.Sphere(center, radius) };
+    st.sphereData.set(entry.entryId, cached);
+    return cached;
   }
 
   function sphere(entry) {
     const data = entrySphereData(entry);
-    return new THREE.Sphere(new THREE.Vector3(...data.c), data.r);
+    if (data.sphere) return data.sphere;
+    data.sphere = new THREE.Sphere(new THREE.Vector3(data.c[0], data.c[1], data.c[2]), data.r);
+    return data.sphere;
   }
 
   function distance(entry) {
     const camera = S.viewport?.camera; if (!camera) return Infinity;
-    const data = entrySphereData(entry);
-    return camera.position.distanceTo(new THREE.Vector3(...data.c));
+    const c = entrySphereData(entry).c;
+    const x = camera.position.x - c[0], y = camera.position.y - c[1], z = camera.position.z - c[2];
+    return Math.sqrt(x*x + y*y + z*z);
   }
 
   function rebuildObjectIndex() {
@@ -102,7 +111,7 @@
   }
 
   function buildSpatialCells() {
-    st.cellMap.clear(); st.cells = [];
+    st.cellMap.clear(); st.cells = []; st.sphereData.clear();
     for (const entry of st.entries) {
       if (!entry || entry.visible === false) continue;
       const data = entrySphereData(entry);
@@ -141,12 +150,13 @@
   }
 
   function cacheBounds(object, root) {
-    requestAnimationFrame(() => {
-      if (!root?.parent) return;
-      const box = new THREE.Box3().setFromObject(root); if (box.isEmpty()) return;
-      const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-      st.bounds.set(object.id, { c: center.toArray(), r: Math.max(8, size.length() / 2) });
-    });
+    // Real mesh bounds already come from the V19 spatial index. Avoid running
+    // Box3.setFromObject for every streamed root during camera movement.
+    if (!object?.ephLargeStreamed || !root) return;
+    const entry = st.byId.get(object.ephLargeEntryId);
+    if (!entry) return;
+    const data = st.sphereData.get(entry.entryId);
+    if (data) st.bounds.set(object.id, data);
   }
 
   function showRoot(object) {
@@ -163,8 +173,6 @@
   function hideRoot(id) {
     const viewport = S.viewport, root = viewport?.objectRoots?.get(id);
     if (!root || id === S.selectedId) return;
-    const object = st.objectById.get(id);
-    if (object) cacheBounds(object, root);
     viewport.objectGroup.remove(root); viewport.disposeObject(root); viewport.objectRoots.delete(id);
     st.shownProps.delete(id);
   }
@@ -174,8 +182,10 @@
     if (!id || id === S.selectedId || object?.ephLargeDirty) return;
     hideRoot(id);
     try { VMAP.removeObject(S.doc, object); } catch {}
-    S.objects = S.objects.filter(item => item.id !== id);
+    const index = S.objects.findIndex(item => item.id === id);
+    if (index >= 0) S.objects.splice(index, 1);
     st.objectById.delete(id);
+    st.bounds.delete(id);
     S.viewport.objects = S.objects;
     st.loaded.delete(entry.entryId);
   }
@@ -189,7 +199,8 @@
     }
     if (entry.type === 'entity') {
       const proxyId = `entity:${entry.dmxId || entry.entryId}`;
-      S.objects = S.objects.filter(item => item.id !== proxyId);
+      const proxyIndex = S.objects.findIndex(item => item.id === proxyId);
+      if (proxyIndex >= 0) S.objects.splice(proxyIndex, 1);
       st.objectById.delete(proxyId);
     }
     for (const object of objects) {
@@ -209,7 +220,7 @@
     st.treeTimer = setTimeout(() => {
       st.treeTimer = null;
       if (!st.active) return;
-      try { renderTree?.(); if (S.selectedId) renderProperties?.(); } catch {}
+      try { if (S.selectedId && S.selectedId !== 'world') { renderTree?.(); renderProperties?.(); } } catch {}
     }, TREE_DELAY);
   }
 
@@ -232,6 +243,8 @@
         try { const parsed = parseBlock(block.text, entry); addElement(parsed.element); bind(entry, parsed.objects); }
         catch (error) { report('error', `Large-map block ${block.entryId} failed.`, error?.stack || error?.message || String(error)); }
       }
+      // Do not rebuild the 3k+ Scene DOM on every streamed batch. Only refresh
+      // it lazily when a non-world object is actually selected.
       scheduleTree();
     } finally {
       containers.forEach(item => st.pending.delete(item.entryId));
@@ -242,35 +255,8 @@
   function frustum() {
     const viewport = S.viewport;
     viewport.camera.updateMatrixWorld();
-    return new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(viewport.camera.projectionMatrix, viewport.camera.matrixWorldInverse));
-  }
-
-  function occluders() {
-    const output = [];
-    for (const [id, root] of S.viewport?.objectRoots || []) {
-      const object = st.objectById.get(id);
-      if (object?.type === 'part' && object.ephLargeStreamed) output.push(root);
-    }
-    return output;
-  }
-
-  function occluded(entry, roots) {
-    if (roots.length < 16) return false;
-    const camera = S.viewport.camera, s = sphere(entry), c = s.center, r = s.radius, ray = S.viewport.raycaster;
-    const samples = [
-      c.clone(), c.clone().add(new THREE.Vector3(r,0,0)), c.clone().add(new THREE.Vector3(-r,0,0)),
-      c.clone().add(new THREE.Vector3(0,r,0)), c.clone().add(new THREE.Vector3(0,-r,0)),
-      c.clone().add(new THREE.Vector3(0,0,r)), c.clone().add(new THREE.Vector3(0,0,-r)),
-    ];
-    for (const point of samples) {
-      const direction = point.clone().sub(camera.position), length = direction.length();
-      if (length < 1) return false;
-      direction.normalize(); ray.set(camera.position, direction); ray.near = .1;
-      ray.far = Math.max(.1, length - Math.max(4, r * .04));
-      const hit = ray.intersectObjects(roots, true)[0]; ray.far = Infinity;
-      if (!hit) return false;
-    }
-    return true;
+    st.projectionMatrix.multiplyMatrices(viewport.camera.projectionMatrix, viewport.camera.matrixWorldInverse);
+    return st.frustum.setFromProjectionMatrix(st.projectionMatrix);
   }
 
   function visibleEntries(view) {
@@ -283,14 +269,14 @@
   }
 
   function unloadInvisible(view, now) {
-    for (const [entryId] of [...st.loaded]) {
+    for (const [entryId] of st.loaded) {
       const entry = st.byId.get(entryId); if (!entry) continue;
       const visible = view.intersectsSphere(sphere(entry));
       if (visible) { st.hidden.delete(entryId); continue; }
       if (!st.hidden.has(entryId)) st.hidden.set(entryId, now);
       if (now - st.hidden.get(entryId) > UNLOAD_MS && entry.type === 'mesh') evict(entry);
     }
-    for (const objectId of [...st.shownProps]) {
+    for (const objectId of st.shownProps) {
       const object = st.objectById.get(objectId), entry = object && st.byId.get(object.ephLargeEntryId);
       if (!entry || view.intersectsSphere(sphere(entry))) { st.hidden.delete(objectId); continue; }
       if (!st.hidden.has(objectId)) st.hidden.set(objectId, now);
@@ -321,25 +307,27 @@
       if (entry) loadEntries([entry]);
     }
 
-    const roots = occluders();
+    // Frustum + real mesh bounds are cheap and stable. The old code fired up to
+    // 28 recursive scene raycasts every refresh for occlusion; on a streamed
+    // Valve map that cost more CPU than the geometry it prevented from loading.
     const candidates = [
       ...meshes.map(entry => ({ kind: 'mesh', entry, d: distance(entry) })),
       ...props.map(item => ({ kind: 'prop', ...item, d: distance(item.entry) })),
     ].sort((a,b) => a.d - b.d);
     const toMesh = [];
-    let count = 0, checks = 0;
+    let count = 0;
     for (const candidate of candidates) {
       if (count >= BATCH) break;
-      if (roots.length >= 16 && checks < MAX_OCCLUSION_CHECKS && candidate.d > 256) {
-        checks++;
-        if (occluded(candidate.entry, roots)) continue;
-      }
       if (candidate.kind === 'prop') showRoot(candidate.object); else toMesh.push(candidate.entry);
       count++;
     }
     if (toMesh.length) loadEntries(toMesh);
 
-    const resident = [...st.loaded.keys()].map(id => st.byId.get(id)).filter(entry => entry?.type === 'mesh');
+    const resident = [];
+    for (const entryId of st.loaded.keys()) {
+      const entry = st.byId.get(entryId);
+      if (entry?.type === 'mesh') resident.push(entry);
+    }
     if (resident.length > MAX_RESIDENT) {
       resident.sort((a,b) => distance(b) - distance(a));
       resident.slice(MAX_RESIDENT).forEach(evict);
@@ -347,8 +335,8 @@
 
     st.refreshCount++;
     st.lastRefreshMs = performance.now() - started;
-    if (st.refreshCount <= 3 || st.refreshCount % 100 === 0) {
-      report(st.lastRefreshMs > 12 ? 'warning' : 'normal', `Visibility refresh checked ${st.cells.length} cells / ${entries.length} in-view entries in ${st.lastRefreshMs.toFixed(1)} ms.`, {
+    if (st.refreshCount <= 3 || st.refreshCount % 200 === 0) {
+      report(st.lastRefreshMs > 8 ? 'warning' : 'normal', `Visibility refresh checked ${st.cells.length} cells / ${entries.length} in-view entries in ${st.lastRefreshMs.toFixed(1)} ms.`, {
         totalEntries: st.entries.length, resident: st.loaded.size, pending: st.pending.size,
       });
     }
@@ -382,7 +370,8 @@
     if (S.camera) return;
     const entry = st.entries.find(item => /info_player_(counterterrorist|terrorist)/i.test(item.className || '')) || st.entries.find(item => item.type === 'mesh') || st.entries[0];
     if (!entry || !S.viewport) return;
-    const point = new THREE.Vector3(...worldPosition(entry));
+    const c = entrySphereData(entry).c;
+    const point = new THREE.Vector3(c[0], c[1], c[2]);
     S.viewport.orbit.target.copy(point.clone().add(new THREE.Vector3(0,0,48)));
     S.viewport.camera.position.copy(point.clone().add(new THREE.Vector3(240,-360,180)));
     S.viewport.camera.lookAt(S.viewport.orbit.target); S.viewport.orbit.update();
@@ -485,7 +474,7 @@
     st.entries = Array.isArray(decoded.largeMapEntries) ? decoded.largeMapEntries : [];
     st.byId = new Map(st.entries.map(item => [item.entryId, item]));
     st.byDmx = new Map(st.entries.filter(item => item.dmxId).map(item => [String(item.dmxId), item]));
-    st.loaded.clear(); st.pending.clear(); st.bounds.clear(); st.hidden.clear(); st.shownProps.clear();
+    st.loaded.clear(); st.pending.clear(); st.bounds.clear(); st.hidden.clear(); st.shownProps.clear(); st.sphereData.clear();
     S.project = { ...project, ephLargeMap: true, ephLargeMapToken: st.token, ephLargeMapStats: { meshCount: decoded.meshCount, entityCount: decoded.entityCount, decodedBytes: decoded.decodedBytes } };
     S.doc = tiny; S.objects = VMAP.extractObjects(tiny).map(ensureObject);
     for (const entry of st.entries) if (entry.type === 'entity') S.objects.push(proxy(entry));
@@ -494,7 +483,7 @@
     if (S.viewport) { S.viewport.objects = S.objects; S.viewport.clearObjects(); initialCamera(); }
     renderAll?.(); updateTitle?.(); schedule();
     await api.autosave?.({ project: S.project, uiState: window.uiSnapshot?.() || null });
-    report('normal', 'Streamed map opened with cell-based visibility.', { entries: st.entries.length, cells: st.cells.length, pixelRatio: 1 });
+    report('normal', 'Streamed map opened with cached allocation-free visibility.', { entries: st.entries.length, cells: st.cells.length, pixelRatio: 1 });
     return true;
   }
 
@@ -504,7 +493,7 @@
     try { await api.largeMapRelease?.(st.token); } catch {}
     try { if (S.viewport && st.oldPixelRatio != null) { S.viewport.renderer.setPixelRatio(st.oldPixelRatio); S.viewport.resize?.(); } } catch {}
     st.token = null; st.entries = []; st.byId.clear(); st.byDmx.clear(); st.loaded.clear(); st.pending.clear();
-    st.bounds.clear(); st.hidden.clear(); st.objectById.clear(); st.shownProps.clear(); st.cells = []; st.cellMap.clear();
+    st.bounds.clear(); st.hidden.clear(); st.objectById.clear(); st.shownProps.clear(); st.sphereData.clear(); st.cells = []; st.cellMap.clear();
   }
 
   window.EPH_LARGE_STREAM = {
