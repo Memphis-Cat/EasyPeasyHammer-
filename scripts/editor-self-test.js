@@ -35,6 +35,7 @@ const textExtensions = new Set(['.js', '.css', '.html', '.json', '.bat', '.md', 
 const allTextFiles = allProjectFiles.filter(file => textExtensions.has(path.extname(file).toLowerCase()));
 const rel = file => path.relative(root, file).replace(/\\/g, '/');
 const text = file => { try { return fs.readFileSync(file, 'utf8'); } catch { return ''; } };
+const hazardSweepFiles = allTextFiles.filter(file => rel(file) !== 'scripts/editor-self-test.js');
 
 const pkg = JSON.parse(read('package.json'));
 check(versionAtLeast(pkg.dependencies?.ws, '8.21.3'), 'ws must stay at 8.21.3 or newer.');
@@ -120,12 +121,13 @@ check(stability.includes('__ephEditorStabilityV28'), 'Editor V28 stability marke
 check(stability.includes('MAX_PROPERTY_FACES'), 'Large imported mesh property rendering must remain bounded.');
 check(stability.includes('THUMB_WORKERS'), 'Material preview concurrency must remain bounded.');
 
-// Repository-wide render hazard sweep. This intentionally scans every text/code
-// file, not only files already suspected by a previous failure.
-const pureBlackCanvasFiles = allTextFiles.filter(file => /#threeViewport[^\n]{0,160}background\s*:\s*#000(?:000)?\b/i.test(text(file)));
+// Repository-wide render hazard sweep. This intentionally scans every project
+// text/code file except this audit script itself, whose regex definitions would
+// otherwise match their own source text rather than a real editor hazard.
+const pureBlackCanvasFiles = hazardSweepFiles.filter(file => /#threeViewport[^\n]{0,160}background\s*:\s*#000(?:000)?\b/i.test(text(file)));
 check(pureBlackCanvasFiles.length === 0, `Pure-black viewport masking found in: ${pureBlackCanvasFiles.map(rel).join(', ')}`);
 
-const competingLoaderFiles = allTextFiles.filter(file => {
+const competingLoaderFiles = hazardSweepFiles.filter(file => {
   const name = rel(file);
   if (name === 'src/project-dialog.js') return false;
   const body = text(file);
