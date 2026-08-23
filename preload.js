@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   windowToggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
   windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
   windowClose: () => ipcRenderer.invoke('window:close'),
+  closeReady: () => ipcRenderer.invoke('app:close-ready'),
   copyText: (text) => ipcRenderer.invoke('app:copy-text', text),
   appLog: (level, source, message, meta = null) => ipcRenderer.invoke('app-log:record', { level, source, message, meta }),
   appLogs: () => ipcRenderer.invoke('app-log:get'),
@@ -86,6 +87,11 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   collabShowFile: (localPath, expectedSize = null) => ipcRenderer.invoke('collab:show-file-v2', localPath, expectedSize),
   collabListShared: () => ipcRenderer.invoke('collab:list-shared'),
   collabForgetShared: (sessionId) => ipcRenderer.invoke('collab:forget-shared', sessionId),
+  onPrepareClose: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('app:prepare-close', listener);
+    return () => ipcRenderer.removeListener('app:prepare-close', listener);
+  },
   onVmapLoadProgress: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('vmap:load-progress', listener);
