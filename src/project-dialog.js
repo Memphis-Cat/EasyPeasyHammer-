@@ -178,6 +178,7 @@ async function ensureViewportBundle() {
   await safeLoadPass('advanced-ui.js', 'ephAdvancedUi');
   await safeLoadPass('bundled/editor-tools-v6.bundle.js', 'ephEditorToolsV6Bundle');
   await safeLoadPass('bundled/editor-ux-v7.bundle.js', 'ephEditorUxV7Bundle');
+  await safeLoadPass('editor-ux-bindings-v7.js', 'ephEditorUxBindingsV7');
   await safeLoadPass('special-mesh-duplicate-v6.js', 'ephSpecialMeshDuplicateV6');
   await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
   await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
