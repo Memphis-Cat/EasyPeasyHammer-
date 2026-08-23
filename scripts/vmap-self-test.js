@@ -18,8 +18,10 @@ const sourceFiles = [
 ];
 const syntaxOnlyFiles = [
   path.join(root, 'launcher.js'),
+  path.join(root, 'preload.js'),
   path.join(root, 'vmap-text-preflight.js'),
   path.join(root, 'vmap-write-guard.js'),
+  path.join(root, 'vmap-dmx-bridge.js'),
   path.join(sourceRoot, 'project-dialog.js'),
   path.join(sourceRoot, 'save-guard-v10.js')
 ];
