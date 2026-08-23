@@ -3,6 +3,7 @@ import * as THREE from 'three';
 
 const helpers = new Map();
 const avatars = new Map();
+const cameras = new Map();
 const PURPLE = 0x9b5cff;
 const PURPLE_LIGHT = 0xc9adff;
 
@@ -27,6 +28,7 @@ function removePeer(peerId, viewport) {
   if (helper) { viewport.scene.remove(helper); helper.geometry?.dispose?.(); helper.material?.dispose?.(); helpers.delete(peerId); }
   const avatar = avatars.get(peerId);
   if (avatar) { viewport.scene.remove(avatar.group); disposeTree(avatar.group); avatars.delete(peerId); }
+  cameras.delete(peerId);
 }
 
 function makeAvatar() {
@@ -62,12 +64,12 @@ function makeAvatar() {
   return { group, arrow };
 }
 
-function cameraFromCursorPacket(cursorData) {
+function updateCameraCache(peerId, cursorData) {
   const payload = cursorData?.point;
-  if (!payload || Array.isArray(payload)) return null;
+  if (!payload || Array.isArray(payload)) return cameras.get(peerId) || null;
   const camera = payload.camera;
-  if (!Array.isArray(camera?.position) || !Array.isArray(camera?.target)) return null;
-  return camera;
+  if (Array.isArray(camera?.position) && Array.isArray(camera?.target)) cameras.set(peerId, camera);
+  return cameras.get(peerId) || null;
 }
 
 function update() {
@@ -77,7 +79,7 @@ function update() {
   const state = collab.state?.() || {};
   const livePeers = new Set((state.users || []).map(user => user.peerId).filter(peerId => peerId && peerId !== state.peerId));
 
-  for (const peerId of new Set([...helpers.keys(), ...avatars.keys()])) if (!livePeers.has(peerId)) removePeer(peerId, viewport);
+  for (const peerId of new Set([...helpers.keys(), ...avatars.keys(), ...cameras.keys()])) if (!livePeers.has(peerId)) removePeer(peerId, viewport);
 
   for (const [peerId, selection] of collab.remoteSelections || []) {
     if (!livePeers.has(peerId) || !selection?.selectedId) continue;
@@ -101,8 +103,7 @@ function update() {
   }
 
   for (const peerId of livePeers) {
-    const cursorData = collab.remoteCursors?.get(peerId);
-    const camera = cameraFromCursorPacket(cursorData);
+    const camera = updateCameraCache(peerId, collab.remoteCursors?.get(peerId));
     let avatar = avatars.get(peerId);
     if (!avatar) {
       avatar = makeAvatar();
