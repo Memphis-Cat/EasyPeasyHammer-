@@ -73,6 +73,7 @@
     document.body.appendChild(script);
   }
 
+  loadPass('vmap-import-fidelity-v27.js', '__ephVmapImportFidelityV27');
   loadPass('large-map-stream-v21.js', '__ephLargeMapStreamV21');
   loadPass('large-map-spatial-v19.js', '__ephLargeMapSpatialV19');
   loadPass('complex-vmap-v15.js', '__ephComplexVmapV15');
@@ -87,6 +88,7 @@
   loadPass('map-local-fast-v21.js', '__ephMapLocalFastV21');
   loadPass('render-performance-v20.js', '__ephRenderPerformanceV20');
   loadPass('entity-runtime-v21.js', '__ephEntityRuntimeV21');
+  loadPass('mesh-render-fast-v27.js', '__ephMeshRenderFastV27');
   loadPass('source2-coordinates-v23.js', '__ephSource2CoordinatesV23');
   loadPass('scale-tool-v21.js', '__ephScaleToolV21');
   loadPass('scale-legacy-disable-v21.js', '__ephScaleLegacyDisableV21');
