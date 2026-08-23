@@ -102,6 +102,7 @@
   loadPass('negative-brush-safety-v22.js', '__ephNegativeBrushSafetyV22');
   loadPass('properties-scroll-v23.js', '__ephPropertiesScrollV23');
   loadPass('solid-entity-runtime-v24.js', '__ephSolidEntityRuntimeV24');
+  loadPass('collision-export-v25.js', '__ephCollisionExportV25');
 
   repair();
   requestAnimationFrame(repair);
