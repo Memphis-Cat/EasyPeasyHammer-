@@ -8,8 +8,7 @@
   const MAX_LOCAL_MODEL_LOADS = 2;
   const modelQueue = [];
   let modelLoads = 0;
-  let installedViewport = null;
-  let installedLoadModel = null;
+  let installed = false;
 
   function report(message, meta = null) {
     console.info(`[Render Performance] ${message}`, meta || '');
@@ -35,15 +34,9 @@
   }
 
   function install() {
+    if (installed) return true;
     const viewport = window.EPH3D || (typeof S !== 'undefined' ? S?.viewport : null);
     if (!viewport?.loadModel) return false;
-    if (viewport === installedViewport && viewport.loadModel === installedLoadModel) return true;
-    if (viewport.loadModel.__ephQueueV20) {
-      installedViewport = viewport;
-      installedLoadModel = viewport.loadModel;
-      return true;
-    }
-
     const rawLoadModel = viewport.loadModel.bind(viewport);
     const wrappedLoadModel = function(resource) {
       const normalized = String(resource || '').replace(/\\/g, '/');
@@ -54,8 +47,7 @@
     wrappedLoadModel.__ephQueueV20 = true;
     wrappedLoadModel.__ephPrevious = rawLoadModel;
     viewport.loadModel = wrappedLoadModel;
-    installedViewport = viewport;
-    installedLoadModel = wrappedLoadModel;
+    installed = true;
     report(`Map-local worldnode model concurrency limited to ${MAX_LOCAL_MODEL_LOADS}.`);
     return true;
   }
@@ -64,7 +56,11 @@
   // geometry afterwards to merge those materials. V27 now deduplicates before
   // mesh construction, so that expensive second geometry/material pass is gone.
   report('Post-render material rebatching disabled; V27 renders unique materials at source.');
-  install();
-  [500, 1500, 3000].forEach(delay => setTimeout(install, delay));
-  window.addEventListener('eph3d-ready', install, { once: true });
+  if (!install()) {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (install() || Date.now() - started > 5000) clearInterval(timer);
+    }, 250);
+  }
+  window.addEventListener('eph3d-ready', () => { if (!installed) install(); }, { once: true });
 })();
