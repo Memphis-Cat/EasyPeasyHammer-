@@ -24,6 +24,10 @@ check(versionAtLeast(pkg.dependencies?.ws, '8.21.3'), 'ws must stay at 8.21.3 or
 check(versionAtLeast(pkg.devDependencies?.['electron-builder'], '26.15.3'), 'electron-builder must stay at 26.15.3 or newer.');
 check(pkg.build?.asar !== false, 'Packaged builds must not disable ASAR.');
 
+const buildBat = read('Build_EXE.bat');
+check(buildBat.includes('SAFE_EB_VERSION=26.15.3'), 'Build_EXE.bat must not reinstall an older vulnerable electron-builder.');
+check(!buildBat.includes('electron-builder@26.0.11'), 'Build_EXE.bat still references vulnerable electron-builder 26.0.11.');
+
 const launcher = read('launcher.js');
 check(launcher.includes("require('./electron-security')"), 'Electron security guard must load before the editor.');
 
@@ -40,6 +44,7 @@ check(!/setInterval\s*\(\s*synchronizeAll\s*,\s*1000\s*\)/.test(fidelity), 'Text
 const largeMap = read('large-map-service.js');
 check(largeMap.includes('VALID_TOKEN'), 'Large-map cache tokens must be validated.');
 check(largeMap.includes('MAX_PATCH_BYTES'), 'Large-map patch input must be bounded.');
+check(largeMap.includes('target.toLowerCase() !== source.toLowerCase()'), 'Large-map saves must stay on the opened VMAP path.');
 
 const startup = read('src/startup-interaction-fix.js');
 check(startup.includes('editor-stability-v28.js'), 'Editor V28 stability pass must be loaded.');
@@ -48,6 +53,10 @@ const stability = read('src/editor-stability-v28.js');
 check(stability.includes('__ephEditorStabilityV28'), 'Editor V28 stability marker is missing.');
 check(stability.includes('MAX_PROPERTY_FACES'), 'Large imported mesh property rendering must remain bounded.');
 check(stability.includes('installIncrementalViewport'), 'Incremental viewport updates must remain installed.');
+check(stability.includes('THUMB_WORKERS'), 'Material preview concurrency must remain bounded.');
+
+const pullBat = read('Pull_Latest.bat');
+check(pullBat.includes('npm install --ignore-scripts'), 'Pull_Latest.bat must refresh changed dependencies without running lifecycle scripts.');
 
 if (failures.length) {
   console.error(`Editor self-test failed (${failures.length}):`);
