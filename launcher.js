@@ -16,8 +16,6 @@ require('./vmap-write-guard');
 require('./vmap-dmx-bridge');
 
 // Install the collaboration WebSocket shim before main.js loads app-services.
-// collab-network owns the fixed port and message-size policy so it is only
-// patched once instead of wrapping ws.WebSocketServer twice.
 require('./collab-network');
 
 const { registerAttachmentService } = require('./attachment-service');
@@ -37,6 +35,11 @@ registerEntityFgdServiceV18({ ipcMain: electron.ipcMain, app: electron.app });
 
 const { registerLargeMapService } = require('./large-map-service');
 registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
+
+// Replace only the block-read handler. This keeps the reverted large-map system
+// intact while preventing one 25-128 MB Anubis element from poisoning a batch.
+const { registerLargeMapBlockServiceV34 } = require('./src/large-map-block-service-v34');
+registerLargeMapBlockServiceV34({ ipcMain: electron.ipcMain, app: electron.app });
 
 const { registerLargeMapSpatialServiceV19 } = require('./large-map-spatial-service-v19');
 registerLargeMapSpatialServiceV19({ ipcMain: electron.ipcMain, app: electron.app });
