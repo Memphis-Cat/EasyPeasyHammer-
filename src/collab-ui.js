@@ -184,8 +184,10 @@
 
   function syncVisibility() {
     const editorVisible = !document.getElementById('editorScreen')?.classList.contains('hidden');
-    root.hidden = !state.connected || !editorVisible;
-    if (!root.hidden && state.chatHistory?.length) wakeChat(2200);
+    const open = root.classList.contains('eph-chat-open');
+    const hasMessages = Boolean(state.chatHistory?.length);
+    root.hidden = !state.connected || !editorVisible || (!open && !hasMessages);
+    if (!root.hidden && hasMessages) wakeChat(2200);
   }
 
   function openChat() {
@@ -209,6 +211,10 @@
     if (!root.classList.contains('eph-chat-open')) return;
     root.classList.remove('eph-chat-open');
     input.blur();
+    if (!state.chatHistory?.length) {
+      root.hidden = true;
+      return;
+    }
     scheduleFade(500);
   }
 
