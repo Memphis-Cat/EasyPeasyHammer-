@@ -38,6 +38,8 @@
       "app-services.js",
       "recent-project-service.js",
       "entity-fgd-service.js",
+      "large-map-service.js",
+      "project-name-service.js",
       "collab-service.js",
       "collab-network.js",
       "attachment-service.js",
