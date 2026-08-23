@@ -16,8 +16,10 @@ function stringify(value, depth = 0) {
   const out = {};
   for (const [key, item] of Object.entries(value).slice(0, 24)) {
     if (/password|token|secret|authorization/i.test(key)) out[key] = '<redacted>';
-    else if (/vmapText|content|data$/i.test(key) && typeof item === 'string' && item.length > 1000) out[key] = `<string ${item.length.toLocaleString()} chars>`;
-    else out[key] = depth >= 2 && typeof item === 'object' ? '<object>' : item;
+    else if (typeof item === 'string' && item.length > 500) out[key] = `${item.slice(0, 120)}… <string ${item.length.toLocaleString()} chars>`;
+    else if (Array.isArray(item) && item.length > 32) out[key] = `<array ${item.length.toLocaleString()} items>`;
+    else if (depth >= 2 && typeof item === 'object' && item) out[key] = '<object>';
+    else out[key] = item;
   }
   try { return JSON.stringify(out); } catch { return String(value); }
 }
@@ -104,7 +106,6 @@ function registerAppLogService({ ipcMain, app }) {
     app.on('web-contents-created', (_event, contents) => {
       record('normal', 'electron', `webContents created id=${contents.id} type=${contents.getType?.() || 'unknown'}`);
       contents.on('console-message', (_event, detailsOrLevel, messageMaybe, lineMaybe, sourceMaybe) => {
-        // Electron 31+ sends a details object; older builds send positional args.
         const details = typeof detailsOrLevel === 'object' && detailsOrLevel ? detailsOrLevel : null;
         const level = details?.level || detailsOrLevel;
         const message = details?.message || messageMaybe || '';
