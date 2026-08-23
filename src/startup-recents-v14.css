@@ -1,0 +1,93 @@
+/* byanca */
+.startup-card.eph-recent-startup {
+  width: min(760px, calc(100vw - 40px));
+  max-height: calc(100vh - 70px);
+  overflow: auto;
+}
+
+.eph-recent-maps {
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.eph-recent-maps-title {
+  margin: 0 0 8px;
+  color: #aeb6c1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.eph-recent-maps-list {
+  display: grid;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.eph-recent-map {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #2d3540;
+  border-radius: 7px;
+  background: #151a21;
+  color: #dce2e9;
+  cursor: pointer;
+  text-align: left;
+}
+
+.eph-recent-map:hover {
+  border-color: #3c6f9f;
+  background: #1b222b;
+}
+
+.eph-recent-map:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.eph-recent-map-main {
+  min-width: 0;
+}
+
+.eph-recent-map-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.eph-recent-map-path {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #798492;
+  font-size: 10px;
+}
+
+.eph-recent-map-time {
+  flex: 0 0 auto;
+  color: #7f8996;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.eph-recent-maps-empty {
+  padding: 12px;
+  border: 1px dashed #303844;
+  border-radius: 7px;
+  color: #77818d;
+  text-align: center;
+  font-size: 11px;
+}
