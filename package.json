@@ -50,6 +50,7 @@
       "attachment-access.js",
       "attachment-service.js",
       "electron-security.js",
+      "close-safety.js",
       "vmap-text-preflight.js",
       "vmap-write-guard.js",
       "vmap-dmx-bridge.js",
