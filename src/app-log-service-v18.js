@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_RECORDS = 20000;
+const MAX_LOG_FILE_BYTES = 20 * 1024 * 1024;
+const FLUSH_MS = 180;
 
 function stringify(value, depth = 0) {
   if (value == null) return String(value);
@@ -34,7 +36,10 @@ function registerAppLogService({ ipcMain, app }) {
   globalThis.__ephAppLogServiceV18 = true;
 
   const records = [];
+  const pendingLines = [];
   let filePath = null;
+  let flushTimer = null;
+  let flushing = false;
   let installedWebContentsHook = false;
 
   function ensureFile() {
@@ -43,9 +48,48 @@ function registerAppLogService({ ipcMain, app }) {
       const folder = path.join(app.getPath('userData'), 'Logs');
       fs.mkdirSync(folder, { recursive: true });
       filePath = path.join(folder, 'EasyPeasyHammer-latest.log');
-      fs.writeFileSync(filePath, '', 'utf8');
+      try {
+        if (fs.existsSync(filePath) && fs.statSync(filePath).size > MAX_LOG_FILE_BYTES) {
+          const previous = path.join(folder, 'EasyPeasyHammer-previous.log');
+          fs.rmSync(previous, { force: true });
+          fs.renameSync(filePath, previous);
+        }
+      } catch {}
+      if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, '', 'utf8');
     } catch {}
     return filePath;
+  }
+
+  function lineFor(row) {
+    return `${new Date(row.at).toISOString()} [${row.level.toUpperCase()}] [${row.source}] ${row.message}${row.meta ? ` | ${row.meta}` : ''}\n`;
+  }
+
+  function flushAsync() {
+    if (flushing || !pendingLines.length) return;
+    const target = ensureFile();
+    if (!target) return;
+    flushing = true;
+    const payload = pendingLines.splice(0, pendingLines.length).join('');
+    fs.appendFile(target, payload, 'utf8', () => {
+      flushing = false;
+      if (pendingLines.length) scheduleFlush();
+    });
+  }
+
+  function flushSync() {
+    if (!pendingLines.length) return;
+    const target = ensureFile();
+    if (!target) return;
+    try { fs.appendFileSync(target, pendingLines.splice(0, pendingLines.length).join(''), 'utf8'); } catch {}
+  }
+
+  function scheduleFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      flushAsync();
+    }, FLUSH_MS);
+    flushTimer.unref?.();
   }
 
   function record(level = 'normal', source = 'app', message = '', meta = null) {
@@ -59,10 +103,8 @@ function registerAppLogService({ ipcMain, app }) {
     if (!row.message && !row.meta) return row;
     records.push(row);
     if (records.length > MAX_RECORDS) records.splice(0, records.length - MAX_RECORDS);
-    try {
-      const target = ensureFile();
-      if (target) fs.appendFileSync(target, `${new Date(row.at).toISOString()} [${row.level.toUpperCase()}] [${row.source}] ${row.message}${row.meta ? ` | ${row.meta}` : ''}\n`, 'utf8');
-    } catch {}
+    pendingLines.push(lineFor(row));
+    scheduleFlush();
     return row;
   }
 
@@ -73,6 +115,7 @@ function registerAppLogService({ ipcMain, app }) {
   rawHandle('app-log:record', (_event, payload = {}) => ({ ok: true, row: record(payload.level, payload.source || 'renderer', payload.message, payload.meta) }));
   rawHandle('app-log:clear', () => {
     records.length = 0;
+    pendingLines.length = 0;
     try { const target = ensureFile(); if (target) fs.writeFileSync(target, '', 'utf8'); } catch {}
     record('normal', 'logger', 'Diagnostics log cleared.');
     return { ok: true };
@@ -99,6 +142,8 @@ function registerAppLogService({ ipcMain, app }) {
 
   process.on('uncaughtExceptionMonitor', error => record('error', 'main:uncaught', error?.message || String(error), error));
   process.on('unhandledRejection', reason => record('error', 'main:promise', 'Unhandled rejection', reason));
+  process.on('exit', flushSync);
+  app.on('before-quit', flushSync);
 
   function hookWebContents() {
     if (installedWebContentsHook) return;
@@ -124,6 +169,7 @@ function registerAppLogService({ ipcMain, app }) {
   }
 
   hookWebContents();
+  record('normal', 'app', '================ EasyPeasyHammer session started ================');
   record('normal', 'app', 'EasyPeasyHammer process starting.', { version: app.getVersion?.(), platform: process.platform, arch: process.arch, electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node });
 }
 
