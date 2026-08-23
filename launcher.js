@@ -5,6 +5,7 @@ electron.app.commandLine.appendSwitch('disable-renderer-backgrounding');
 electron.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 require('./vmap-write-guard');
+require('./vmap-dmx-bridge');
 
 // Install the collaboration WebSocket shim before main.js loads app-services.
 // collab-network owns the fixed port and message-size policy so it is only
