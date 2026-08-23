@@ -12,30 +12,37 @@
   async function ensureStreamer() {
     if (window.EPH_LARGE_STREAM?.open && window.__ephLargeMapStreamV21) return window.EPH_LARGE_STREAM;
     if (installing) return installing;
+
     installing = (async () => {
       const started = Date.now();
-      while ((!window.EPH3D || !(window.EPH_THREE || window.THREE)) && Date.now() - started < 10000) await wait(50);
+      while (
+        (!window.EPH3D
+          || !(window.EPH_THREE || window.THREE)
+          || !window.EPH_LARGE_STREAM?.open
+          || !window.__ephLargeMapStreamV21)
+        && Date.now() - started < 10000
+      ) await wait(50);
+
       if (!window.EPH3D) throw new Error('3D viewport did not initialize before large-map streaming.');
       if (!(window.EPH_THREE || window.THREE)) throw new Error('The viewport Three.js instance was not exposed to large-map streaming.');
       if (!window.EPH_LARGE_STREAM?.open || !window.__ephLargeMapStreamV21) {
-        document.querySelector('script[data-eph-pass="large-map-stream-v21.js"]')?.remove();
-        window.__ephLargeMapStreamV21 = false;
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'large-map-stream-v21.js'; script.dataset.ephPass = 'large-map-stream-v21.js'; script.async = false;
-          script.onload = resolve; script.onerror = () => reject(new Error('Could not load large-map-stream-v21.js.'));
-          document.body.appendChild(script);
-        });
+        throw new Error('Large-map V21 streamer was not initialized by the deterministic runtime sequence.');
       }
-      const ready = Date.now();
-      while ((!window.EPH_LARGE_STREAM?.open || !window.__ephLargeMapStreamV21) && Date.now() - ready < 5000) await wait(50);
-      if (!window.EPH_LARGE_STREAM?.open) throw new Error('Large-map V21 streamer did not initialize.');
       return window.EPH_LARGE_STREAM;
     })();
+
     try { return await installing; }
     catch (error) {
       console.error('Large-map V21 bootstrap failed', error);
-      try { await api?.appLog?.('error', 'large-map-bootstrap-v21', error?.message || String(error), { viewport: Boolean(window.EPH3D), three: Boolean(window.EPH_THREE || window.THREE) }); } catch {}
+      try {
+        await api?.appLog?.('error', 'large-map-bootstrap-v21', error?.message || String(error), {
+          viewport: Boolean(window.EPH3D),
+          three: Boolean(window.EPH_THREE || window.THREE),
+          streamer: Boolean(window.EPH_LARGE_STREAM?.open),
+          marker: Boolean(window.__ephLargeMapStreamV21),
+          runtimeReady: document.documentElement.dataset.ephRuntimeReady === '1',
+        });
+      } catch {}
       throw error;
     } finally { installing = null; }
   }
@@ -63,12 +70,15 @@
       }
       return raw(project, ui);
     };
-    wrapped.__ephComplexVmapV15 = true; wrapped.__ephLargeBootstrapV21 = true;
-    window.loadProject = wrapped; try { loadProject = wrapped; } catch {}
+    wrapped.__ephComplexVmapV15 = true;
+    wrapped.__ephLargeBootstrapV21 = true;
+    wrapped.__ephPrevious = raw;
+    window.loadProject = wrapped;
+    try { loadProject = wrapped; } catch {}
     return true;
   }
 
   installWrapper();
-  [250,800,1800,3500].forEach(ms => setTimeout(installWrapper, ms));
+  [250, 800, 1800, 3500].forEach(ms => setTimeout(installWrapper, ms));
   window.EPH_LARGE_BOOTSTRAP = { ensureStreamer, installWrapper };
 })();
