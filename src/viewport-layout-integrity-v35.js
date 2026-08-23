@@ -125,9 +125,17 @@
 
     // If Chromium kept the hidden-screen grid track at zero, percentage heights
     // cannot recover it because they keep resolving against that zero track.
-    // Give the middle editor row a concrete height from the visible editor box.
-    const appHeight = app.getBoundingClientRect().height || Math.max(1, window.innerHeight - 30);
-    const editorHeight = editor.getBoundingClientRect().height || appHeight;
+    // Give the editor and middle row concrete fallback heights from the visible
+    // application box, then let the normal grid own sizing again on resize.
+    const appStyle = getComputedStyle(app);
+    const appPadding = (Number.parseFloat(appStyle.paddingTop) || 0) + (Number.parseFloat(appStyle.paddingBottom) || 0);
+    const appContentHeight = Math.max(1, Math.floor((app.clientHeight || window.innerHeight || 1) - appPadding));
+    let editorHeight = editor.getBoundingClientRect().height;
+    if (editorHeight < 2 && appContentHeight > 1) {
+      editor.style.setProperty('height', `${appContentHeight}px`, 'important');
+      editorHeight = editor.getBoundingClientRect().height || appContentHeight;
+    }
+
     const headerHeight = header?.getBoundingClientRect().height || 0;
     const footerHeight = footer?.getBoundingClientRect().height || 36;
     const available = Math.max(1, Math.floor(editorHeight - headerHeight - footerHeight));
@@ -174,10 +182,10 @@
       if (canvas && (canvas.width < 2 || canvas.height < 2)) {
         try {
           const ratio = viewport.renderer.getPixelRatio?.() || 1;
+          if (ratio <= 0) viewport.renderer.setPixelRatio(1);
           viewport.renderer.setSize(Math.floor(width), Math.floor(height), false);
           viewport.camera.aspect = width / height;
           viewport.camera.updateProjectionMatrix();
-          if (ratio <= 0) viewport.renderer.setPixelRatio(1);
         } catch (error) {
           report('error', 'WebGL backing-buffer resize failed.', error?.stack || error?.message || String(error));
         }
