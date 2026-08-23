@@ -144,6 +144,7 @@
           ...project,
           ephReadOnlySource: true,
           ephLargeMapCompatibility: true,
+          ephSkipModelWarmup: true,
           ephSourceVmapPath: project.vmapPath,
           ephLargeMapStats: {
             sourceBytes: decoded.size,
@@ -175,8 +176,10 @@
       }
     }
 
-    const loaded = await rawLoadProject(project, { ...(ui || {}), vmapText: decoded.text, ephSourceEncoding: 'binary' });
+    const loadProjectValue = { ...project, ephSkipModelWarmup: true };
+    const loaded = await rawLoadProject(loadProjectValue, { ...(ui || {}), vmapText: decoded.text, ephSourceEncoding: 'binary' });
     if (loaded) {
+      if (S.project) delete S.project.ephSkipModelWarmup;
       S.dirty = false;
       window.updateTitle?.();
       clearCompatibilityUi();
@@ -189,7 +192,13 @@
 
     if (ui?.vmapText) {
       const loaded = await rawLoadProject(project, ui);
-      if (loaded) applyCompatibilityUi(project);
+      if (loaded) {
+        if (project?.ephReadOnlySource) {
+          S.dirty = false;
+          window.updateTitle?.();
+        }
+        applyCompatibilityUi(project);
+      }
       return loaded;
     }
 
