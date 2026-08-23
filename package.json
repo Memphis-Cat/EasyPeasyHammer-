@@ -1,26 +1,27 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
   "license": "UNLICENSED",
   "scripts": {
     "test:vmap": "node scripts/vmap-self-test.js",
+    "test:editor": "node scripts/editor-self-test.js",
     "bundle:renderer": "node bundle-renderer.js",
-    "start": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
-    "dev": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
-    "prebuild": "node scripts/vmap-self-test.js",
+    "start": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
+    "dev": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
+    "prebuild": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js",
     "build": "node bundle-renderer.js && electron-builder --win portable",
-    "build:portable": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron-builder --win portable"
+    "build:portable": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
-    "ws": "8.18.3"
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "electron": "43.4.0",
-    "electron-builder": "26.0.11",
+    "electron-builder": "26.15.3",
     "esbuild": "0.25.9",
     "three": "0.185.1"
   },
@@ -28,7 +29,7 @@
     "appId": "com.memphiscat.easypeasyhammer",
     "productName": "EasyPeasyHammer",
     "artifactName": "EasyPeasyHammer.exe",
-    "asar": false,
+    "asar": true,
     "electronDist": ".runtime/electron-dist",
     "files": [
       "launcher.js",
@@ -46,7 +47,9 @@
       "project-name-service.js",
       "collab-service.js",
       "collab-network.js",
+      "attachment-access.js",
       "attachment-service.js",
+      "electron-security.js",
       "vmap-text-preflight.js",
       "vmap-write-guard.js",
       "vmap-dmx-bridge.js",
