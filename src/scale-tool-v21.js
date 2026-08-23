@@ -225,71 +225,99 @@
     return true;
   }
 
+  function wrapSync(vp) {
+    if (typeof vp.syncSelectedFromRoot !== 'function' || vp.syncSelectedFromRoot.__ephScaleV21) return;
+    const raw = vp.syncSelectedFromRoot.bind(vp);
+    const wrapped = function(doCommit) {
+      const obj = this.getObjectById?.(this.selectedId);
+      if (this.tool === 'scale' && obj?.type === 'part') {
+        if (!drag) begin(this);
+        if (doCommit) { commit(this); return; }
+        preview(this); return;
+      }
+      return raw(doCommit);
+    };
+    wrapped.__ephScaleV21 = true;
+    wrapped.__ephPrevious = raw;
+    vp.syncSelectedFromRoot = wrapped;
+  }
+
+  function wrapCommit(vp) {
+    if (typeof vp.commitObjectTransform !== 'function' || vp.commitObjectTransform.__ephScaleV21) return;
+    const raw = vp.commitObjectTransform.bind(vp);
+    const wrapped = function() {
+      const obj = this.getObjectById?.(this.selectedId);
+      if (this.tool === 'scale' && obj?.type === 'part') {
+        if (!drag) begin(this);
+        commit(this);
+        return;
+      }
+      return raw();
+    };
+    wrapped.__ephScaleV21 = true;
+    wrapped.__ephPrevious = raw;
+    vp.commitObjectTransform = wrapped;
+  }
+
+  function wrapSetTool(vp) {
+    if (typeof vp.setTool !== 'function' || vp.setTool.__ephScaleV21) return;
+    const raw = vp.setTool.bind(vp);
+    const wrapped = function(tool) {
+      const obj = this.getObjectById?.(this.selectedId);
+      if (tool === 'scale' && obj?.type === 'part') normalizeLatentScale(this, obj);
+      const result = raw(tool);
+      if (tool === 'scale') { this.transform?.setSpace?.('local'); this.transform?.setScaleSnap?.(null); }
+      showUi(tool);
+      return result;
+    };
+    wrapped.__ephScaleV21 = true;
+    wrapped.__ephPrevious = raw;
+    vp.setTool = wrapped;
+  }
+
+  function wrapSnaps(vp) {
+    if (typeof vp.updateSnaps !== 'function' || vp.updateSnaps.__ephScaleV21) return;
+    const raw = vp.updateSnaps.bind(vp);
+    const wrapped = function() {
+      const result = raw();
+      if (this.tool === 'scale') this.transform?.setScaleSnap?.(null);
+      return result;
+    };
+    wrapped.__ephScaleV21 = true;
+    wrapped.__ephPrevious = raw;
+    vp.updateSnaps = wrapped;
+  }
+
+  function installEvents(vp) {
+    if (vp.__ephScaleEventsV21) return;
+    vp.__ephScaleEventsV21 = true;
+    const canvas = vp.renderer?.domElement;
+    canvas?.addEventListener('pointerdown', event => { pointer = { x: event.clientX, y: event.clientY }; }, true);
+    vp.transform.addEventListener('dragging-changed', event => {
+      if (vp.tool !== 'scale') return;
+      if (event.value) begin(vp);
+      else if (drag) commit(vp);
+    });
+  }
+
   function install() {
     const vp = window.EPH3D || state()?.viewport;
     if (!vp?.transform || !vp.syncSelectedFromRoot) return false;
     viewport = vp;
     ensureUi();
-    if (!vp.__ephScaleToolV21) {
-      vp.__ephScaleToolV21 = true;
-      const rawSync = vp.syncSelectedFromRoot.bind(vp);
-      vp.syncSelectedFromRoot = function(doCommit) {
-        const obj = this.getObjectById?.(this.selectedId);
-        if (this.tool === 'scale' && obj?.type === 'part') {
-          if (!drag) begin(this);
-          if (doCommit) { commit(this); return; }
-          preview(this); return;
-        }
-        return rawSync(doCommit);
-      };
-
-      if (typeof vp.commitObjectTransform === 'function') {
-        const rawCommitObjectTransform = vp.commitObjectTransform.bind(vp);
-        vp.commitObjectTransform = function() {
-          const obj = this.getObjectById?.(this.selectedId);
-          if (this.tool === 'scale' && obj?.type === 'part') {
-            if (!drag) begin(this);
-            commit(this);
-            return;
-          }
-          return rawCommitObjectTransform();
-        };
-      }
-
-      const rawSetTool = vp.setTool.bind(vp);
-      vp.setTool = function(tool) {
-        const obj = this.getObjectById?.(this.selectedId);
-        if (tool === 'scale' && obj?.type === 'part') normalizeLatentScale(this, obj);
-        const result = rawSetTool(tool);
-        if (tool === 'scale') { this.transform?.setSpace?.('local'); this.transform?.setScaleSnap?.(null); }
-        showUi(tool);
-        return result;
-      };
-
-      if (typeof vp.updateSnaps === 'function') {
-        const rawSnaps = vp.updateSnaps.bind(vp);
-        vp.updateSnaps = function() {
-          const result = rawSnaps();
-          if (this.tool === 'scale') this.transform?.setScaleSnap?.(null);
-          return result;
-        };
-      }
-
-      const canvas = vp.renderer?.domElement;
-      canvas?.addEventListener('pointerdown', event => { pointer = { x: event.clientX, y: event.clientY }; }, true);
-      vp.transform.addEventListener('dragging-changed', event => {
-        if (vp.tool !== 'scale') return;
-        if (event.value) begin(vp);
-        else if (drag) commit(vp);
-      });
-      showUi(vp.tool);
-      log('World-unit one-side scaling installed.', { defaultMode: mode(), step: localStorage.getItem(STORAGE_STEP) || 'grid' });
-    }
-    return true;
+    wrapSync(vp);
+    wrapCommit(vp);
+    wrapSetTool(vp);
+    wrapSnaps(vp);
+    installEvents(vp);
+    vp.__ephScaleToolV21 = true;
+    if (vp.tool === 'scale') vp.transform?.setScaleSnap?.(null);
+    showUi(vp.tool);
+    return Boolean(vp.syncSelectedFromRoot.__ephScaleV21 && vp.commitObjectTransform?.__ephScaleV21);
   }
 
   install();
-  const timer = setInterval(() => { if (install()) clearInterval(timer); }, 250);
-  setTimeout(() => clearInterval(timer), 15000);
+  const timer = setInterval(install, 250);
+  setTimeout(() => clearInterval(timer), 30000);
   window.addEventListener('eph3d-ready', install);
 })();
