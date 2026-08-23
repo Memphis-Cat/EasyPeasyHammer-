@@ -10,6 +10,10 @@
 .editor-layout.eph-resizable-layout {
   grid-template-columns: var(--eph-left-width) 6px minmax(0, 1fr) var(--eph-right-width);
 }
+.editor-layout.eph-resizable-layout > #leftPanel { grid-column: 1; }
+.editor-layout.eph-resizable-layout > .eph-left-resizer { grid-column: 2; }
+.editor-layout.eph-resizable-layout > .workspace-column { grid-column: 3; }
+.editor-layout.eph-resizable-layout > #rightPanel { grid-column: 4; }
 .editor-layout.eph-resizable-layout.eph-left-panel-hidden {
   grid-template-columns: 0 0 minmax(0, 1fr) var(--eph-right-width);
 }
@@ -45,6 +49,9 @@ body.eph-resizing-left * { cursor: col-resize !important; user-select: none !imp
 .workspace-column.eph-resizable-workspace {
   grid-template-rows: minmax(150px, 1fr) 6px var(--eph-bottom-height);
 }
+.workspace-column.eph-resizable-workspace > #viewport { grid-row: 1; }
+.workspace-column.eph-resizable-workspace > .eph-bottom-resizer { grid-row: 2; }
+.workspace-column.eph-resizable-workspace > #bottomPanel { grid-row: 3; }
 .workspace-column.eph-resizable-workspace.eph-bottom-panel-hidden {
   grid-template-rows: minmax(150px, 1fr) 0 0;
 }
