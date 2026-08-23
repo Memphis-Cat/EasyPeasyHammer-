@@ -5,7 +5,7 @@
   if (window.__ephRenderPerformanceV20) return;
   window.__ephRenderPerformanceV20 = true;
 
-  const MAX_LOCAL_MODEL_LOADS = 2;
+  let maxLocalModelLoads = 6;
   const modelQueue = [];
   let modelLoads = 0;
   let installed = false;
@@ -23,7 +23,7 @@
   }
 
   function pumpModels() {
-    while (modelLoads < MAX_LOCAL_MODEL_LOADS && modelQueue.length) {
+    while (modelLoads < maxLocalModelLoads && modelQueue.length) {
       const item = modelQueue.shift();
       modelLoads++;
       Promise.resolve().then(item.task).then(item.resolve, item.reject).finally(() => {
@@ -48,9 +48,18 @@
     wrappedLoadModel.__ephPrevious = rawLoadModel;
     viewport.loadModel = wrappedLoadModel;
     installed = true;
-    report(`Map-local worldnode model concurrency limited to ${MAX_LOCAL_MODEL_LOADS}.`);
+    report(`Map-local worldnode model concurrency set to ${maxLocalModelLoads} for faster loading-screen warmup.`);
     return true;
   }
+
+  window.EPH_MODEL_QUEUE = {
+    setLimit(value) {
+      maxLocalModelLoads = Math.max(1, Math.min(8, Math.floor(Number(value) || 1)));
+      pumpModels();
+      return maxLocalModelLoads;
+    },
+    state: () => ({ active: modelLoads, queued: modelQueue.length, limit: maxLocalModelLoads }),
+  };
 
   // V20 used to create a material for every face and then rebuild the entire
   // geometry afterwards to merge those materials. V27 now deduplicates before
