@@ -18,4 +18,7 @@ registerAttachmentService({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerRecentProjectService } = require('./recent-project-service');
 registerRecentProjectService({ ipcMain: electron.ipcMain, app: electron.app });
 
+const { registerEntityFgdService } = require('./entity-fgd-service');
+registerEntityFgdService({ ipcMain: electron.ipcMain, app: electron.app });
+
 require('./main');
