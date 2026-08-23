@@ -16,9 +16,6 @@
     if (!root) return;
     const buttons = root.matches?.('button') ? [root] : [...(root.querySelectorAll?.('button') || [])];
     for (const button of buttons) {
-      // Editor chrome is intentionally pointer-driven. Leaving a clicked button
-      // focused lets Chromium turn Q/arrows/etc. into keyboard focus/navigation
-      // and causes the orange focus selection seen in the toolbar.
       button.tabIndex = -1;
       button.setAttribute('tabindex', '-1');
     }
@@ -29,26 +26,17 @@
     if (!editor || editor.dataset.ephButtonFocusGuard === '1') return;
     editor.dataset.ephButtonFocusGuard = '1';
     prepareEditorButtons(editor);
-
     editor.addEventListener('focusin', event => {
       const button = event.target?.closest?.('button');
       if (button && editor.contains(button)) button.blur();
     }, true);
-
     editor.addEventListener('click', event => {
       const button = event.target?.closest?.('button');
       if (!button || !editor.contains(button)) return;
       queueMicrotask(() => button.isConnected && button.blur());
     }, true);
-
-    // Safe narrow observer: it only watches new editor children. The callback
-    // changes tabindex attributes, not child nodes, so it cannot self-trigger.
     const observer = new MutationObserver(records => {
-      for (const record of records) {
-        for (const node of record.addedNodes) {
-          if (node.nodeType === 1) prepareEditorButtons(node);
-        }
-      }
+      for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1) prepareEditorButtons(node);
     });
     observer.observe(editor, { childList: true, subtree: true });
   }
@@ -75,34 +63,23 @@
   function installStablePartScaling() {
     const viewport = window.EPH3D;
     if (!viewport) return false;
-
     if (!viewport.__ephStableScaleSync && typeof viewport.syncSelectedFromRoot === 'function') {
       viewport.__ephStableScaleSync = true;
       const previousSync = viewport.syncSelectedFromRoot.bind(viewport);
       viewport.syncSelectedFromRoot = function(commit) {
         const object = this.getObjectById?.(this.selectedId);
         const root = this.objectRoots?.get?.(this.selectedId);
-        if (this.tool === 'scale' && object?.type === 'part' && root) {
-          // Never let TransformControls cross through zero. A zero/negative
-          // component can collapse or invert the mesh before the final bake.
-          clampLivePartScale(root);
-        }
+        if (this.tool === 'scale' && object?.type === 'part' && root) clampLivePartScale(root);
         const result = previousSync(commit);
         if (this.tool === 'scale' && object?.type === 'part') this.updateSelectionBox?.();
         return result;
       };
     }
-
     const change = viewport.callbacks?.change;
     if (typeof change === 'function' && !change.__ephStableScaleChange) {
       const previousChange = change;
       const stableChange = function(object, commit) {
         if (viewport.tool === 'scale' && object?.type === 'part' && commit !== true) {
-          // Critical: texture-projection-v4 bakes Part scale inside
-          // VMAP.applyObjectToDocument(). The old renderer called that on every
-          // TransformControls mouse-move, repeatedly multiplying the vertices.
-          // Keep the live scale only in the viewport/object and let the existing
-          // commitObjectTransform path bake it exactly once when dragging ends.
           updateLiveScaleFields(object);
           return;
         }
@@ -112,7 +89,6 @@
       stableChange.__ephPreviousChange = previousChange;
       viewport.callbacks.change = stableChange;
     }
-
     return true;
   }
 
@@ -124,39 +100,39 @@
       button.removeAttribute('aria-disabled');
       makeInteractive(button);
     }
-
     document.querySelectorAll('#startupScreen button, #startupScreen input, #newProjectModal button, #newProjectModal input, .eph-window-controls, .eph-window-controls button').forEach(makeInteractive);
-
     const minimize = document.getElementById('ephMinimize');
     const maximize = document.getElementById('ephMaximize');
     const close = document.getElementById('ephClose');
-
-    if (minimize) minimize.onclick = event => {
-      event.preventDefault();
-      event.stopPropagation();
-      api?.windowMinimize?.();
-    };
-
+    if (minimize) minimize.onclick = event => { event.preventDefault(); event.stopPropagation(); api?.windowMinimize?.(); };
     if (maximize) maximize.onclick = async event => {
-      event.preventDefault();
-      event.stopPropagation();
+      event.preventDefault(); event.stopPropagation();
       const maximized = await api?.windowToggleMaximize?.();
       maximize.textContent = maximized ? '❐' : '□';
       maximize.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
     };
-
-    if (close) close.onclick = event => {
-      event.preventDefault();
-      event.stopPropagation();
-      api?.windowClose?.();
-    };
-
+    if (close) close.onclick = event => { event.preventDefault(); event.stopPropagation(); api?.windowClose?.(); };
     installEditorButtonFocusGuard();
     installStablePartScaling();
   }
 
-  // Bounded startup/runtime repairs only. Do not use a document-wide mutation
-  // observer here; the 0.6.2 audit previously created a renderer-starving loop.
+  function loadPass(src, marker) {
+    if (window[marker] || document.querySelector(`script[data-eph-pass="${src}"]`)) return;
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.ephPass = src;
+    script.onerror = () => console.error(`EasyPeasyHammer pass failed: ${src}`);
+    document.body.appendChild(script);
+  }
+
+  // These are lightweight late passes. Loading them here keeps the large
+  // project-dialog enhancement chain untouched and prevents another startup
+  // regression from a giant loader rewrite.
+  loadPass('large-map-stream-v16.js', '__ephLargeMapStreamV16');
+  loadPass('visual-clean-v16.js', '__ephVisualCleanV16');
+  loadPass('project-name-guard-v16.js', '__ephProjectNameGuardV16');
+  loadPass('diagnostics-v16.js', '__ephDiagnosticsV16');
+
   repair();
   requestAnimationFrame(repair);
   setTimeout(repair, 100);
