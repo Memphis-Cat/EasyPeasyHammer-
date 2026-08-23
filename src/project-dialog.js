@@ -78,6 +78,11 @@
 
       const project = result.project || result;
       const doc = VMAP.createEmptyDocument();
+      const validation = VMAP.validate(doc);
+      if (!validation.ok) {
+        setError(`Could not create a valid Hammer VMAP: ${validation.errors.join(' ')}`);
+        return;
+      }
       const write = await api.saveVmap(project.vmapPath, VMAP.stringify(doc), false);
       if (!write?.ok) {
         setError(write?.error || 'Could not create the VMAP file.');
@@ -166,6 +171,7 @@ async function ensureViewportBundle() {
 }
 
 (async () => {
+  await safeLoadPass('vmap-compat-v9.js', 'ephVmapCompatV9');
   await safeLoadPass('interaction-pass.js', 'ephInteractionPass');
   await ensureViewportBundle();
   await safeLoadPass('bundled/advanced-viewport.bundle.js', 'ephAdvancedViewportBundle');
