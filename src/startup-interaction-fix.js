@@ -87,11 +87,15 @@
   loadPass('map-local-fast-v21.js', '__ephMapLocalFastV21');
   loadPass('render-performance-v20.js', '__ephRenderPerformanceV20');
   loadPass('entity-runtime-v21.js', '__ephEntityRuntimeV21');
+  loadPass('source2-coordinates-v23.js', '__ephSource2CoordinatesV23');
   loadPass('scale-tool-v21.js', '__ephScaleToolV21');
   loadPass('scale-legacy-disable-v21.js', '__ephScaleLegacyDisableV21');
+  loadPass('transform-precision-v23.js', '__ephTransformPrecisionV23');
   loadPass('large-map-bootstrap-v21.js', '__ephLargeMapBootstrapV21');
   loadPass('collab-chat-v22.js', '__ephCollabChatV22');
   loadPass('multi-select-v22.js', '__ephMultiSelectV22');
+  loadPass('multi-select-coordinates-v23.js', '__ephMultiSelectCoordinatesV23');
+  loadPass('collab-local-view-v23.js', '__ephCollabLocalViewV23');
   loadPass('local-history-v22.js', '__ephLocalHistoryV22');
   loadPass('history-bindings-v22.js', '__ephHistoryBindingsV22');
   loadPass('negative-brush-v22.js', '__ephNegativeBrushV22');
