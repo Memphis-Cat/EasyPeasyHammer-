@@ -6,7 +6,7 @@ async function loadVmap(vmapPath) {
   if (inspection?.ok && inspection.encoding === 'binary') {
     const decoded = await ipcRenderer.invoke('project:decode-vmap', vmapPath);
     if (!decoded?.ok) return { ok: false, error: decoded?.error || 'This binary Hammer VMAP could not be decoded.' };
-    return { ...decoded, ok: true, text: decoded.text, sourceEncoding: 'binary' };
+    return { ...decoded, ok: true, sourceEncoding: 'binary' };
   }
 
   const result = await ipcRenderer.invoke('project:load-vmap', vmapPath);
@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   createProject: (name) => ipcRenderer.invoke('project:create', name),
   listRecentProjects: (limit = 24) => ipcRenderer.invoke('project:list-recents', limit),
   openRecentProject: (vmapPath) => ipcRenderer.invoke('project:open-recent', vmapPath),
+  deleteRecentProject: (vmapPath) => ipcRenderer.invoke('project:delete-recent', { vmapPath }),
   inspectVmap: (vmapPath) => ipcRenderer.invoke('project:inspect-vmap', vmapPath),
   loadVmap,
   decodeVmap: (vmapPath) => ipcRenderer.invoke('project:decode-vmap', vmapPath),
