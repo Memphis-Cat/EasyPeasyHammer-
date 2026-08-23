@@ -55,7 +55,9 @@ function safeImageName(value, extension) {
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/[. ]+$/g, '')
     .slice(0, 120) || `pasted-image${extension}`;
-  return IMAGE_EXTENSIONS.has(path.extname(raw).toLowerCase()) ? raw : `${raw}${extension}`;
+  const existing = path.extname(raw).toLowerCase();
+  if (IMAGE_EXTENSIONS.has(existing)) return `${raw.slice(0, -existing.length)}${extension}`;
+  return `${raw}${extension}`;
 }
 
 function imagePath(filePath) {
@@ -77,8 +79,7 @@ function installChatImageBridge({ ipcMain, app }) {
 
   const queuedImages = new Map();
   const rawOpenDialog = electron.dialog.showOpenDialog.bind(electron.dialog);
-  const draftRoot = path.join(app.getPath('userData'), 'ChatImageDrafts');
-  fs.mkdirSync(draftRoot, { recursive: true });
+  const getDraftRoot = () => path.join(app.getPath('userData'), 'ChatImageDrafts');
 
   electron.dialog.showOpenDialog = async function(...args) {
     const hasWindow = args.length > 1;
@@ -114,6 +115,8 @@ function installChatImageBridge({ ipcMain, app }) {
       if (!buffer?.length) return { ok: false, error: 'Clipboard image is empty.' };
       if (buffer.length > MAX_PASTED_IMAGE_BYTES) return { ok: false, error: 'Pasted image exceeds the 64 MB clipboard limit.' };
 
+      const draftRoot = getDraftRoot();
+      fs.mkdirSync(draftRoot, { recursive: true });
       const now = Date.now();
       try {
         for (const entry of fs.readdirSync(draftRoot, { withFileTypes: true })) {
