@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
