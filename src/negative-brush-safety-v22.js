@@ -20,6 +20,8 @@
       selectedId: S.selectedId,
       selectedFaces: [...(S.selectedFaces || [])],
       multi: window.EPH_MULTI_SELECTION?.ids?.() || clone(S.multiSelectedIds || []),
+      undo: [...(S.undo || [])],
+      redo: [...(S.redo || [])],
     };
   }
 
@@ -28,6 +30,8 @@
     S.doc = VMAP.parse(snapshot.text);
     S.objects = VMAP.extractObjects(S.doc).map(ensureObject);
     if (snapshot.extras && typeof applyExtras === 'function') applyExtras(snapshot.extras);
+    S.undo = snapshot.undo || [];
+    S.redo = snapshot.redo || [];
     S.selectedId = S.objects.some(object => object.id === snapshot.selectedId) ? snapshot.selectedId : 'world';
     S.selectedFaces = new Set(snapshot.selectedFaces?.length ? snapshot.selectedFaces : [0]);
     S.subSelection = null;
