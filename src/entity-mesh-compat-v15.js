@@ -31,11 +31,15 @@
   function detachById(element, targetId) {
     if (!element?.kind) return null;
     for (const item of element.fields || []) {
-      if (!Array.isArray(item.value)) continue;
-      const index = item.value.findIndex(child => child?.kind && elementId(child) === targetId);
-      if (index >= 0) return item.value.splice(index, 1)[0];
-      for (const child of item.value) {
-        const found = detachById(child, targetId);
+      if (Array.isArray(item.value)) {
+        const index = item.value.findIndex(child => child?.kind && elementId(child) === targetId);
+        if (index >= 0) return item.value.splice(index, 1)[0];
+        for (const child of item.value) {
+          const found = detachById(child, targetId);
+          if (found) return found;
+        }
+      } else if (item.value?.kind) {
+        const found = detachById(item.value, targetId);
         if (found) return found;
       }
     }
@@ -146,6 +150,7 @@
     }));
     const wrapperElement = VMAP.findElementByDmxId?.(S.doc, wrapper?.dmxId);
     if (!wrapper || !wrapperElement) {
+      S.undo?.pop?.();
       toast?.('Could not create the Hammer mesh-entity wrapper.');
       return null;
     }
@@ -153,6 +158,7 @@
     const detached = detachById({ kind: 'root', fields: [{ key: 'elements', value: S.doc.elements }] }, String(part.dmxId));
     if (!detached) {
       VMAP.removeObject?.(S.doc, wrapper);
+      S.undo?.pop?.();
       toast?.('Could not move the selected Part into the mesh entity.');
       return null;
     }
