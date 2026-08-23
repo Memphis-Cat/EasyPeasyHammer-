@@ -12,9 +12,11 @@ const sourceCache = new Map();
 const sourcePromises = new Map();
 const geometryCache = new Map();
 const geometryPromises = new Map();
-const MAX_SOURCE_CACHE = 12;
-const MAX_GEOMETRY_CACHE = 256;
-let sourceQueue = Promise.resolve();
+const MAX_SOURCE_CACHE = 48;
+const MAX_GEOMETRY_CACHE = 384;
+const MAX_SOURCE_TASKS = 2;
+const sourceQueue = [];
+let sourceTasks = 0;
 
 function normalizeResource(value) {
   return String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -194,10 +196,22 @@ function runConvert(executable, input, output, extraArgs) {
   });
 }
 
+function pumpSourceQueue() {
+  while (sourceTasks < MAX_SOURCE_TASKS && sourceQueue.length) {
+    const item = sourceQueue.shift();
+    sourceTasks++;
+    Promise.resolve().then(item.task).then(item.resolve, item.reject).finally(() => {
+      sourceTasks--;
+      pumpSourceQueue();
+    });
+  }
+}
+
 function enqueueSource(task) {
-  const run = sourceQueue.then(task, task);
-  sourceQueue = run.catch(() => {});
-  return run;
+  return new Promise((resolve, reject) => {
+    sourceQueue.push({ task, resolve, reject });
+    pumpSourceQueue();
+  });
 }
 
 function sourceKey(sourceDmx) {
@@ -225,9 +239,10 @@ async function convertedSource(app, sourceDmx) {
     fs.mkdirSync(cacheRoot, { recursive: true });
     const hash = crypto.createHash('sha1').update(key).digest('hex');
     const converted = path.join(cacheRoot, `${hash}.model.dmx`);
+    const alreadyConverted = fs.existsSync(converted);
 
-    if (!fs.existsSync(converted)) {
-      const temp = `${converted}.${process.pid}.tmp`;
+    if (!alreadyConverted) {
+      const temp = `${converted}.${process.pid}.${crypto.randomUUID().slice(0,8)}.tmp`;
       try { fs.rmSync(temp, { force: true }); } catch {}
       let result = await runConvert(tool.executable, sourceDmx, temp, ['-ie', 'binary', '-oe', 'keyvalues2', '-of', 'model']);
       if (!result.ok) result = await runConvert(tool.executable, sourceDmx, temp, ['-oe', 'keyvalues2', '-of', 'model']);
@@ -251,7 +266,8 @@ async function convertedSource(app, sourceDmx) {
       source: sourceDmx,
       draws: meshesByName.size,
       elapsedMs: Date.now() - started,
-      cachedConversion: fs.existsSync(converted),
+      cachedConversion: alreadyConverted,
+      sourceCacheSize: sourceCache.size,
     });
     return value;
   }).finally(() => sourcePromises.delete(key));
@@ -277,14 +293,14 @@ async function readGeometryDisk(app, key) {
 
 function writeGeometryDisk(app, key, result) {
   const file = geometryDiskPath(app, key);
-  const temp = `${file}.${process.pid}.tmp`;
+  const temp = `${file}.${process.pid}.${crypto.randomUUID().slice(0,8)}.tmp`;
   setImmediate(async () => {
     try {
       const text = JSON.stringify({ version: 20, result });
       await fs.promises.writeFile(temp, text, 'utf8');
       try { await fs.promises.rename(temp, file); }
       catch {
-        await fs.promises.copyFile(temp, file);
+        if (!fs.existsSync(file)) await fs.promises.copyFile(temp, file);
         await fs.promises.rm(temp, { force: true });
       }
     } catch {
@@ -311,7 +327,11 @@ async function loadMapLocalModelV20(app, vmapPath, resourcePath) {
 
   const vmdlStat = fs.statSync(vmdlPath);
   const key = [vmdlPath.toLowerCase(), vmdlStat.size, vmdlStat.mtimeMs, ...sourceInfo.map(item => item.key), ...descriptor.drawNames].join('|');
-  if (geometryCache.has(key)) return { ...geometryCache.get(key), cached: true };
+  if (geometryCache.has(key)) {
+    const value = geometryCache.get(key);
+    geometryCache.delete(key); geometryCache.set(key, value);
+    return { ...value, cached: true };
+  }
   if (geometryPromises.has(key)) return geometryPromises.get(key);
 
   const promise = (async () => {
