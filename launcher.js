@@ -15,6 +15,8 @@ ws.WebSocketServer = class EasyPeasyHammerWebSocketServer extends NativeWebSocke
 };
 
 const { registerCollaboration } = require('./collab-service');
+const { registerAttachmentService } = require('./attachment-service');
 registerCollaboration({ ipcMain: electron.ipcMain, app: electron.app });
+registerAttachmentService({ ipcMain: electron.ipcMain });
 
 require('./main');
