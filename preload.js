@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   collabSendCursor: (point) => ipcRenderer.invoke('collab:send-cursor', point),
   collabSendChat: (text, replyTo = null) => ipcRenderer.invoke('collab:send-chat', text, replyTo),
   collabPickFile: () => ipcRenderer.invoke('collab:pick-file'),
+  collabStageImage: (payload) => ipcRenderer.invoke('collab:stage-image', payload),
   collabSendFile: (token, text = '', replyTo = null) => ipcRenderer.invoke('collab:send-file', token, text, replyTo),
   collabAttachmentData: (localPath, expectedSize = null) => ipcRenderer.invoke('collab:attachment-data', localPath, expectedSize),
   collabSaveFile: (localPath, suggestedName, expectedSize = null) => ipcRenderer.invoke('collab:save-file-v2', localPath, suggestedName, expectedSize),
