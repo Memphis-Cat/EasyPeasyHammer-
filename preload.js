@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   searchAssets: (kind, query = '', limit = 200) => ipcRenderer.invoke('assets:search', kind, query, limit),
   materialPreview: (resourcePath) => ipcRenderer.invoke('assets:material-preview', resourcePath),
   modelPreview: (resourcePath) => ipcRenderer.invoke('assets:model-preview', resourcePath),
+  getEntityCatalog: () => ipcRenderer.invoke('entities:fgd-catalog'),
   openWorkshopTools: () => ipcRenderer.invoke('tools:open-workshop'),
   openCollaboratorChat: () => ipcRenderer.invoke('collab:open-chat'),
   isCollaboratorChatFocused: () => ipcRenderer.invoke('collab:is-chat-focused'),
