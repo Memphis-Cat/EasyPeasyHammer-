@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
@@ -41,6 +41,7 @@
       "attachment-service.js",
       "vmap-text-preflight.js",
       "vmap-write-guard.js",
+      "vmap-dmx-bridge.js",
       "src/**/*",
       "assets/**/*",
       "node_modules/ws/**/*",
