@@ -4,6 +4,11 @@ const electron = require('electron');
 electron.app.commandLine.appendSwitch('disable-renderer-backgrounding');
 electron.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Install diagnostics first so every later IPC handler/main-process failure is
+// recorded, including failures that happen before the editor screen opens.
+const { registerAppLogService } = require('./src/app-log-service-v18');
+registerAppLogService({ ipcMain: electron.ipcMain, app: electron.app });
+
 require('./vmap-write-guard');
 require('./vmap-dmx-bridge');
 
@@ -21,10 +26,11 @@ registerRecentProjectService({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerEntityFgdService } = require('./entity-fgd-service');
 registerEntityFgdService({ ipcMain: electron.ipcMain, app: electron.app });
 
-// v17 replaces the basic point-only FGD handler with Hammer's installed
-// PointClass + SolidClass metadata, inherited properties, choices and render hints.
 const { registerEntityFgdServiceV17 } = require('./src/entity-fgd-service-v17');
 registerEntityFgdServiceV17({ ipcMain: electron.ipcMain, app: electron.app });
+
+const { registerEntityFgdServiceV18 } = require('./src/entity-fgd-service-v18');
+registerEntityFgdServiceV18({ ipcMain: electron.ipcMain, app: electron.app });
 
 const { registerLargeMapService } = require('./large-map-service');
 registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
