@@ -20,12 +20,17 @@ class AssetHost {
     const packaged = process.resourcesPath ? path.join(process.resourcesPath, 'asset-host', 'EasyPeasyHammer.AssetHost.exe') : null;
     const localPublish = path.join(__dirname, 'backend', 'EasyPeasyHammer.AssetHost', 'bin', 'Release', 'net10.0', 'win-x64', 'publish', 'EasyPeasyHammer.AssetHost.exe');
     const localExe = path.join(__dirname, 'backend', 'EasyPeasyHammer.AssetHost', 'bin', 'Release', 'net10.0', 'EasyPeasyHammer.AssetHost.exe');
-    for (const exe of [packaged, localPublish, localExe]) if (exe && fs.existsSync(exe)) return { command: exe, args: ['--cache', this.cacheRoot, ...(this.cs2Path ? ['--cs2', this.cs2Path] : [])] };
+    if (packaged && fs.existsSync(packaged)) {
+      return { command: packaged, cwd: process.resourcesPath, args: ['--cache', this.cacheRoot, ...(this.cs2Path ? ['--cs2', this.cs2Path] : [])] };
+    }
+    for (const exe of [localPublish, localExe]) {
+      if (exe && fs.existsSync(exe)) return { command: exe, cwd: __dirname, args: ['--cache', this.cacheRoot, ...(this.cs2Path ? ['--cs2', this.cs2Path] : [])] };
+    }
 
     const project = path.join(__dirname, 'backend', 'EasyPeasyHammer.AssetHost', 'EasyPeasyHammer.AssetHost.csproj');
     if (fs.existsSync(project)) {
       const probe = spawnSync('dotnet', ['--version'], { windowsHide: true, encoding: 'utf8' });
-      if (probe.status === 0) return { command: 'dotnet', args: ['run', '--project', project, '-c', 'Release', '--no-launch-profile', '--', '--cache', this.cacheRoot, ...(this.cs2Path ? ['--cs2', this.cs2Path] : [])] };
+      if (probe.status === 0) return { command: 'dotnet', cwd: __dirname, args: ['run', '--project', project, '-c', 'Release', '--no-launch-profile', '--', '--cache', this.cacheRoot, ...(this.cs2Path ? ['--cs2', this.cs2Path] : [])] };
     }
     return null;
   }
@@ -46,7 +51,7 @@ class AssetHost {
       this.lastError = null;
       let child;
       try {
-        child = spawn(launch.command, launch.args, { cwd: __dirname, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        child = spawn(launch.command, launch.args, { cwd: launch.cwd || __dirname, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
       } catch (error) {
         this.lastError = error.message;
         this.starting = null;
