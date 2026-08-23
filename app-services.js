@@ -115,6 +115,65 @@ function setProfile(app, username) {
   }
 }
 
+function recentAutosaveRoot(app) {
+  return path.join(app.getPath('documents'), 'EasyPeasyHammer', 'Autosaves');
+}
+
+function recentProjectSessions(app) {
+  const root = recentAutosaveRoot(app);
+  const sessions = [];
+  try {
+    if (!fs.existsSync(root)) return sessions;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const sessionFile = path.join(root, entry.name, 'session.json');
+      let payload;
+      try { payload = JSON.parse(fs.readFileSync(sessionFile, 'utf8')); } catch { continue; }
+      const project = payload?.project;
+      if (!project?.vmapPath || !fs.existsSync(project.vmapPath)) continue;
+      let diskModified = 0;
+      try { diskModified = fs.statSync(project.vmapPath).mtimeMs; } catch {}
+      const savedTime = Date.parse(payload.savedAt || '') || diskModified || 0;
+      sessions.push({
+        project,
+        uiState: payload.uiState || null,
+        savedAt: payload.savedAt || (diskModified ? new Date(diskModified).toISOString() : null),
+        savedTime,
+      });
+    }
+  } catch {}
+
+  const unique = new Map();
+  for (const session of sessions.sort((a, b) => b.savedTime - a.savedTime)) {
+    const key = path.resolve(session.project.vmapPath).toLowerCase();
+    if (!unique.has(key)) unique.set(key, session);
+  }
+  return [...unique.values()];
+}
+
+function listRecentProjects(app, limit = 24) {
+  const max = Math.max(1, Math.min(50, Number(limit) || 24));
+  return recentProjectSessions(app).slice(0, max).map(session => ({
+    project: {
+      ...session.project,
+      openedAt: session.project.openedAt || session.savedAt || null,
+    },
+    savedAt: session.savedAt,
+  }));
+}
+
+function openRecentProject(app, vmapPath) {
+  if (!vmapPath) return null;
+  const target = path.resolve(String(vmapPath)).toLowerCase();
+  const session = recentProjectSessions(app).find(item => path.resolve(item.project.vmapPath).toLowerCase() === target);
+  if (!session) return null;
+  return {
+    project: { ...session.project, openedAt: new Date().toISOString() },
+    uiState: session.uiState || null,
+    savedAt: session.savedAt || null,
+  };
+}
+
 function registerAppServices({ ipcMain, app }) {
   let versionPromise = null;
   let versionExpiresAt = 0;
@@ -146,6 +205,8 @@ function registerAppServices({ ipcMain, app }) {
   });
   ipcMain.handle('profile:get', () => getProfile(app));
   ipcMain.handle('profile:set', (event, username) => setProfile(app, username));
+  ipcMain.handle('project:list-recents', (event, limit) => ({ ok: true, projects: listRecentProjects(app, limit) }));
+  ipcMain.handle('project:open-recent', (event, vmapPath) => openRecentProject(app, vmapPath));
   registerCollaboration({ ipcMain, app });
 }
 
