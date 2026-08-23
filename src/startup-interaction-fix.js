@@ -4,7 +4,6 @@
 
   const api = window.easyPeasyHammer;
   const projectActionIds = ['openVmapButton', 'createProjectButton', 'continueButton'];
-  const MIN_PART_SCALE = 0.01;
 
   function makeInteractive(element) {
     if (!element) return;
@@ -41,57 +40,6 @@
     observer.observe(editor, { childList: true, subtree: true });
   }
 
-  function clampLivePartScale(root) {
-    if (!root) return;
-    const safe = value => {
-      const number = Number(value);
-      if (!Number.isFinite(number)) return 1;
-      return Math.max(MIN_PART_SCALE, number);
-    };
-    root.scale.set(safe(root.scale.x), safe(root.scale.y), safe(root.scale.z));
-  }
-
-  function updateLiveScaleFields(object) {
-    if (!object?.scale) return;
-    document.querySelectorAll('.prop-value[data-key="scale"]').forEach(input => {
-      const index = Number(input.dataset.i);
-      const value = Number(object.scale[index]);
-      if (Number.isFinite(value)) input.value = String(Number(value.toFixed(4)));
-    });
-  }
-
-  function installStablePartScaling() {
-    const viewport = window.EPH3D;
-    if (!viewport) return false;
-    if (!viewport.__ephStableScaleSync && typeof viewport.syncSelectedFromRoot === 'function') {
-      viewport.__ephStableScaleSync = true;
-      const previousSync = viewport.syncSelectedFromRoot.bind(viewport);
-      viewport.syncSelectedFromRoot = function(commit) {
-        const object = this.getObjectById?.(this.selectedId);
-        const root = this.objectRoots?.get?.(this.selectedId);
-        if (this.tool === 'scale' && object?.type === 'part' && root) clampLivePartScale(root);
-        const result = previousSync(commit);
-        if (this.tool === 'scale' && object?.type === 'part') this.updateSelectionBox?.();
-        return result;
-      };
-    }
-    const change = viewport.callbacks?.change;
-    if (typeof change === 'function' && !change.__ephStableScaleChange) {
-      const previousChange = change;
-      const stableChange = function(object, commit) {
-        if (viewport.tool === 'scale' && object?.type === 'part' && commit !== true) {
-          updateLiveScaleFields(object);
-          return;
-        }
-        return previousChange(object, commit);
-      };
-      stableChange.__ephStableScaleChange = true;
-      stableChange.__ephPreviousChange = previousChange;
-      viewport.callbacks.change = stableChange;
-    }
-    return true;
-  }
-
   function repair() {
     for (const id of projectActionIds) {
       const button = document.getElementById(id);
@@ -113,7 +61,6 @@
     };
     if (close) close.onclick = event => { event.preventDefault(); event.stopPropagation(); api?.windowClose?.(); };
     installEditorButtonFocusGuard();
-    installStablePartScaling();
   }
 
   function loadPass(src, marker) {
@@ -126,7 +73,7 @@
     document.body.appendChild(script);
   }
 
-  loadPass('large-map-stream-v16.js', '__ephLargeMapStreamV16');
+  loadPass('large-map-stream-v21.js', '__ephLargeMapStreamV21');
   loadPass('large-map-spatial-v19.js', '__ephLargeMapSpatialV19');
   loadPass('complex-vmap-v15.js', '__ephComplexVmapV15');
   loadPass('visual-clean-v16.js', '__ephVisualCleanV16');
@@ -137,8 +84,11 @@
   loadPass('fgd-editor-model-guard-v18.js', '__ephFgdEditorModelGuardV18');
   loadPass('entity-fidelity-v18.js', '__ephEntityFidelityV18');
   loadPass('map-local-assets-v19.js', '__ephMapLocalAssetsV19');
+  loadPass('map-local-fast-v21.js', '__ephMapLocalFastV21');
   loadPass('render-performance-v20.js', '__ephRenderPerformanceV20');
-  loadPass('large-map-bootstrap-v18.js', '__ephLargeMapBootstrapV18');
+  loadPass('entity-runtime-v21.js', '__ephEntityRuntimeV21');
+  loadPass('scale-tool-v21.js', '__ephScaleToolV21');
+  loadPass('large-map-bootstrap-v21.js', '__ephLargeMapBootstrapV21');
 
   repair();
   requestAnimationFrame(repair);
