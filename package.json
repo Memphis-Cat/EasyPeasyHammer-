@@ -36,6 +36,7 @@
       "preload.js",
       "asset-host.js",
       "app-services.js",
+      "recent-project-service.js",
       "collab-service.js",
       "collab-network.js",
       "attachment-service.js",
