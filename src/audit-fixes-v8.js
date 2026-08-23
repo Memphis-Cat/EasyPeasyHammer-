@@ -8,9 +8,7 @@ function projectFolderKey() {
   return S.project?.vmapPath ? `eph-folders:${S.project.vmapPath}` : null;
 }
 
-function persistFolders() {
-  const key = projectFolderKey();
-  if (!key) return;
+function groupingSnapshot() {
   const folders = (S.objects || []).filter(object => object.type === 'folder').map(folder => ({
     id: folder.id,
     name: folder.name,
@@ -18,7 +16,73 @@ function persistFolders() {
     expanded: folder.expanded !== false
   }));
   const parents = Object.fromEntries((S.objects || []).filter(object => object.dmxId && object.parent && object.parent !== 'world').map(object => [object.id, object.parent]));
-  localStorage.setItem(key, JSON.stringify({ folders, parents }));
+  return { ephFolders: folders, ephParents: parents };
+}
+
+function persistFolders() {
+  const key = projectFolderKey();
+  if (!key) return;
+  const grouping = groupingSnapshot();
+  localStorage.setItem(key, JSON.stringify({ folders: grouping.ephFolders, parents: grouping.ephParents }));
+}
+
+function applyGroupingSnapshot(grouping) {
+  if (!grouping) return;
+  const folders = Array.isArray(grouping.ephFolders) ? grouping.ephFolders : [];
+  const parents = grouping.ephParents && typeof grouping.ephParents === 'object' ? grouping.ephParents : {};
+  S.objects = (S.objects || []).filter(object => object.type !== 'folder');
+  const known = new Set(['world']);
+  for (const item of folders) {
+    const id = String(item?.id || '').trim();
+    if (!id || known.has(id)) continue;
+    const folder = {
+      id,
+      type: 'folder',
+      name: String(item.name || 'Folder').slice(0, 80),
+      parent: known.has(item.parent) ? item.parent : 'world',
+      expanded: item.expanded !== false
+    };
+    S.objects.push(folder);
+    known.add(id);
+  }
+  for (const object of S.objects) {
+    if (!object.dmxId) continue;
+    object.parent = known.has(parents[object.id]) ? parents[object.id] : 'world';
+  }
+  if (!S.objects.some(object => object.id === S.selectedId)) S.selectedId = 'world';
+  persistFolders();
+}
+
+function installGroupingHistory() {
+  if (window.__ephAuditGroupingHistory) return;
+  window.__ephAuditGroupingHistory = true;
+
+  const rawPushHistory = pushHistory;
+  pushHistory = function() {
+    rawPushHistory();
+    const item = S.undo?.[S.undo.length - 1];
+    if (item) item.ephGrouping = groupingSnapshot();
+  };
+
+  const rawHistoryState = historyState;
+  historyState = function() {
+    return { ...rawHistoryState(), ephGrouping: groupingSnapshot() };
+  };
+
+  const rawRestoreHistory = restoreHistory;
+  restoreHistory = function(item) {
+    const grouping = item?.ephGrouping || groupingSnapshot();
+    rawRestoreHistory(item);
+    applyGroupingSnapshot(grouping);
+    renderTree();
+    renderProperties();
+    S.viewport?.setObjects?.(S.objects, S.selectedId);
+  };
+
+  const rawUiSnapshot = uiSnapshot;
+  uiSnapshot = function() {
+    return { ...rawUiSnapshot(), ...groupingSnapshot() };
+  };
 }
 
 function installFolderFixes() {
@@ -29,6 +93,7 @@ function installFolderFixes() {
   removeSelected = function() {
     const object = current();
     if (object?.type !== 'folder') return rawRemoveSelected();
+    pushHistory();
     const id = object.id;
     for (const child of S.objects) if (child.parent === id) child.parent = object.parent || 'world';
     S.objects = S.objects.filter(item => item.id !== id);
@@ -66,8 +131,9 @@ function installSharedFolderRestoreFix() {
     const result = await rawLoadProject(project, ui);
     if (result && (Array.isArray(ui?.ephFolders) || ui?.ephParents)) {
       setTimeout(() => {
-        window.EPH_APPLY_SHARED_FOLDERS?.(ui);
-        persistFolders();
+        applyGroupingSnapshot(ui);
+        renderTree();
+        renderProperties();
       }, 180);
     }
     return result;
@@ -82,9 +148,7 @@ function installRotateSnapSync() {
   renderViewportControls = function() {
     const result = rawRender();
     const select = document.getElementById('rotateSnapSelect');
-    if (select && [...select.options].some(option => Number(option.value) === Number(S.angleSnap))) {
-      select.value = String(S.angleSnap);
-    }
+    if (select && [...select.options].some(option => Number(option.value) === Number(S.angleSnap))) select.value = String(S.angleSnap);
     return result;
   };
   renderViewportControls.__ephAuditRotateSync = true;
@@ -101,10 +165,7 @@ function installSpecialMeshProjectionIsolation() {
     const projectionMode = object.ephProjectionMode;
     delete object.ephProjectionMode;
     try { return rawApply(doc, object); }
-    finally {
-      if (projectionMode !== undefined) object.ephProjectionMode = projectionMode;
-      object.type = object.type === 'part' ? (String(object.name || '').startsWith('Decal_') ? 'decal' : 'terrain') : object.type;
-    }
+    finally { if (projectionMode !== undefined) object.ephProjectionMode = projectionMode; }
   };
 
   const rawPrepare = VMAP.prepareForSave.bind(VMAP);
@@ -116,9 +177,7 @@ function installSpecialMeshProjectionIsolation() {
       delete object.ephProjectionMode;
     }
     try { return rawPrepare(doc, objects); }
-    finally {
-      for (const [object, mode] of masked) if (mode !== undefined) object.ephProjectionMode = mode;
-    }
+    finally { for (const [object, mode] of masked) if (mode !== undefined) object.ephProjectionMode = mode; }
   };
 }
 
@@ -212,14 +271,11 @@ function installSurfaceSnapHardening(viewport) {
   if (!viewport || viewport.__ephAuditSurfaceSnap) return;
   viewport.__ephAuditSurfaceSnap = true;
   let drag = null;
-
   viewport.transform.addEventListener('dragging-changed', event => {
     if (!event.value || viewport.tool !== 'move' || !viewport.surfaceSnap) { drag = null; return; }
     const root = viewport.objectRoots.get(viewport.selectedId);
-    if (!root) return;
-    drag = { previousBottom: new THREE.Box3().setFromObject(root).min.z };
+    if (root) drag = { previousBottom: new THREE.Box3().setFromObject(root).min.z };
   });
-
   viewport.transform.addEventListener('objectChange', () => {
     if (!drag || viewport.tool !== 'move' || !viewport.surfaceSnap) return;
     const root = viewport.objectRoots.get(viewport.selectedId);
@@ -228,12 +284,8 @@ function installSurfaceSnapHardening(viewport) {
     const currentBottom = box.min.z;
     const previousBottom = drag.previousBottom;
     const snapDistance = Math.max(2, Math.min(48, (Number(viewport.moveSnap) || 1) * 2));
-    const candidates = [...viewport.objectRoots.entries()]
-      .filter(([id]) => id !== viewport.selectedId)
-      .filter(([id]) => ['part', 'terrain', 'prop'].includes(viewport.getObjectById(id)?.type))
-      .map(([, candidate]) => candidate);
+    const candidates = [...viewport.objectRoots.entries()].filter(([id]) => id !== viewport.selectedId).filter(([id]) => ['part', 'terrain', 'prop'].includes(viewport.getObjectById(id)?.type)).map(([, candidate]) => candidate);
     if (!candidates.length) { drag.previousBottom = currentBottom; return; }
-
     const insetX = Math.min(1, Math.max(0, (box.max.x - box.min.x) * .02));
     const insetY = Math.min(1, Math.max(0, (box.max.y - box.min.y) * .02));
     const xs = [box.min.x + insetX, (box.min.x + box.max.x) / 2, box.max.x - insetX];
@@ -241,7 +293,6 @@ function installSurfaceSnapHardening(viewport) {
     const originZ = Math.max(previousBottom + .5, currentBottom + snapDistance);
     const far = Math.max(snapDistance + 1, previousBottom - currentBottom + snapDistance + 1);
     let bestZ = -Infinity;
-
     for (const x of xs) for (const y of ys) {
       viewport.raycaster.set(new THREE.Vector3(x, y, originZ), new THREE.Vector3(0, 0, -1));
       viewport.raycaster.far = far;
@@ -252,7 +303,6 @@ function installSurfaceSnapHardening(viewport) {
       const near = currentBottom >= z && currentBottom - z <= snapDistance;
       if ((crossed || near) && z > bestZ) bestZ = z;
     }
-
     if (Number.isFinite(bestZ)) {
       root.position.z += bestZ - currentBottom + .02;
       viewport.syncSelectedFromRoot(false);
@@ -318,6 +368,7 @@ function syncEarlyUi() {
 function install(viewport = S.viewport || window.EPH3D) {
   if (window.__ephAuditFixesV8) return;
   window.__ephAuditFixesV8 = true;
+  installGroupingHistory();
   installFolderFixes();
   installSharedFolderRestoreFix();
   installRotateSnapSync();
