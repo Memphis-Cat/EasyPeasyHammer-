@@ -90,6 +90,10 @@
   loadPass('scale-tool-v21.js', '__ephScaleToolV21');
   loadPass('scale-legacy-disable-v21.js', '__ephScaleLegacyDisableV21');
   loadPass('large-map-bootstrap-v21.js', '__ephLargeMapBootstrapV21');
+  loadPass('collab-chat-v22.js', '__ephCollabChatV22');
+  loadPass('multi-select-v22.js', '__ephMultiSelectV22');
+  loadPass('local-history-v22.js', '__ephLocalHistoryV22');
+  loadPass('negative-brush-v22.js', '__ephNegativeBrushV22');
 
   repair();
   requestAnimationFrame(repair);
