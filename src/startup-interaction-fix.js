@@ -4,6 +4,7 @@
 
   const api = window.easyPeasyHammer;
   const projectActionIds = ['openVmapButton', 'createProjectButton', 'continueButton'];
+  let replayingReadyClick = false;
 
   function makeInteractive(element) {
     if (!element) return;
@@ -39,6 +40,23 @@
     }).observe(editor, { childList: true, subtree: true });
   }
 
+  function installRuntimeGate() {
+    if (document.documentElement.dataset.ephRuntimeGate === '1') return;
+    document.documentElement.dataset.ephRuntimeGate = '1';
+    document.addEventListener('click', event => {
+      if (replayingReadyClick || document.documentElement.dataset.ephRuntimeReady === '1') return;
+      const target = event.target?.closest?.('#openVmapButton, #continueButton, #toolbarOpen, [data-action="open-vmap"]');
+      if (!target) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      Promise.resolve(window.EPH_RUNTIME_READY).finally(() => {
+        if (!target.isConnected) return;
+        replayingReadyClick = true;
+        try { target.click(); } finally { replayingReadyClick = false; }
+      });
+    }, true);
+  }
+
   function repair() {
     for (const id of projectActionIds) {
       const button = document.getElementById(id);
@@ -58,12 +76,11 @@
     };
     if (close) close.onclick = event => { event.preventDefault(); event.stopPropagation(); api?.windowClose?.(); };
     installEditorButtonFocusGuard();
+    installRuntimeGate();
   }
 
-  // This file used to launch a second independent script loader while
-  // project-dialog.js was already loading renderer enhancements sequentially.
-  // That made viewport method replacement order depend on network/disk timing.
-  // project-dialog.js is now the only runtime loader; this file only repairs UI.
+  // project-dialog.js is the only runtime script loader. This file only owns
+  // input/window interaction and the readiness gate above.
   repair();
   requestAnimationFrame(repair);
   setTimeout(repair, 100);
