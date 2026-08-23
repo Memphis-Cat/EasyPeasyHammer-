@@ -169,7 +169,7 @@
     let moved = false;
     let viewportFocused = false;
     let flyMode = false;
-    let pointerLocked = false;
+    let rmbLookLocked = false;
     const keys = new Set();
     const extraHelpers = [];
     let boxSelecting = false;
@@ -180,19 +180,16 @@
       flyBadge.textContent = `${flyMode ? 'FLY · ' : ''}${Math.round(flySpeed)} u/s`;
       flyBadge.style.opacity = '1';
       clearTimeout(speedBadgeTimer);
-      if (!persistent) speedBadgeTimer = setTimeout(() => { if (!flyMode) flyBadge.style.opacity = '0'; }, 1000);
+      if (!persistent) speedBadgeTimer = setTimeout(() => { if (!flyMode && !rmbLookLocked) flyBadge.style.opacity = '0'; }, 1000);
     };
 
     const setFlySpeed = value => {
       flySpeed = Math.max(8, Math.min(65536, Number(value) || 640));
       localStorage.setItem('eph-hammer-fly-speed', String(flySpeed));
-      showFlySpeed(flyMode);
+      showFlySpeed(flyMode || rmbLookLocked);
     };
 
-    const adjustFlySpeed = deltaY => {
-      const factor = deltaY < 0 ? 1.25 : 0.8;
-      setFlySpeed(flySpeed * factor);
-    };
+    const adjustFlySpeed = deltaY => setFlySpeed(flySpeed * (deltaY < 0 ? 1.25 : 0.8));
 
     const clearExtraHelpers = () => {
       for (const helper of extraHelpers.splice(0)) {
@@ -293,8 +290,10 @@
     const cameraChanged = () => viewport.callbacks.camera?.(viewport.getCameraState());
 
     const lookBy = (dx, dy) => {
+      const THREE = window.EPH_THREE || window.THREE;
+      if (!THREE) return;
       const distance = Math.max(1, viewport.camera.position.distanceTo(viewport.orbit.target));
-      const worldUp = new (window.EPH_THREE || window.THREE).Vector3(0, 0, 1);
+      const worldUp = new THREE.Vector3(0, 0, 1);
       let direction = viewport.orbit.target.clone().sub(viewport.camera.position).normalize();
       direction.applyAxisAngle(worldUp, -dx * .0027);
       const right = direction.clone().cross(worldUp).normalize();
@@ -321,20 +320,22 @@
       flyMode = Boolean(enabled);
       viewportFocused = flyMode || viewportFocused;
       canvas.classList.toggle('eph-fly-mode', flyMode);
-      document.body.classList.toggle('eph-camera-look', flyMode);
+      document.body.classList.toggle('eph-camera-look', flyMode || rmbLookLocked);
       if (flyMode) {
+        rmbLookLocked = false;
         enterPointerLock();
         showFlySpeed(true);
       } else {
-        leavePointerLock();
-        flyBadge.style.opacity = '0';
+        if (!rmbLookLocked) leavePointerLock();
+        flyBadge.style.opacity = rmbLookLocked ? '1' : '0';
       }
     };
 
     document.addEventListener('pointerlockchange', () => {
-      pointerLocked = document.pointerLockElement === canvas;
-      if (!pointerLocked && flyMode) {
-        flyMode = false;
+      const locked = document.pointerLockElement === canvas;
+      if (!locked) {
+        rmbLookLocked = false;
+        if (flyMode) flyMode = false;
         canvas.classList.remove('eph-fly-mode');
         document.body.classList.remove('eph-camera-look');
         flyBadge.style.opacity = '0';
@@ -342,18 +343,23 @@
     });
 
     document.addEventListener('mousemove', event => {
-      if (document.pointerLockElement !== canvas) return;
+      if (document.pointerLockElement !== canvas || (!flyMode && !rmbLookLocked)) return;
       lookBy(event.movementX || 0, event.movementY || 0);
     }, true);
 
     const endCustomPointer = () => {
+      const endingMode = customMode;
       if (pointerId != null && canvas.hasPointerCapture?.(pointerId)) {
         try { canvas.releasePointerCapture(pointerId); } catch {}
       }
       customMode = null;
       pointerId = null;
       selectionRect.style.display = 'none';
-      if (!flyMode) document.body.classList.remove('eph-camera-look', 'eph-camera-pan');
+      if (endingMode === 'look') {
+        rmbLookLocked = false;
+        if (!flyMode) leavePointerLock();
+      }
+      if (!flyMode && !rmbLookLocked) document.body.classList.remove('eph-camera-look', 'eph-camera-pan');
       else document.body.classList.remove('eph-camera-pan');
     };
 
@@ -378,8 +384,11 @@
         customMode = 'look';
         pointerId = event.pointerId;
         lastX = event.clientX; lastY = event.clientY;
+        rmbLookLocked = true;
         canvas.setPointerCapture?.(pointerId);
+        enterPointerLock();
         document.body.classList.add('eph-camera-look');
+        showFlySpeed(true);
         return;
       }
 
@@ -417,10 +426,11 @@
       const dx = event.clientX - lastX, dy = event.clientY - lastY;
       if (customMode === 'look') {
         event.preventDefault(); event.stopImmediatePropagation();
-        lookBy(dx, dy);
+        if (document.pointerLockElement !== canvas) lookBy(dx, dy);
       } else if (customMode === 'orbit') {
         event.preventDefault(); event.stopImmediatePropagation();
         const THREE = window.EPH_THREE || window.THREE;
+        if (!THREE) return;
         const target = viewport.orbit.target.clone();
         const offset = viewport.camera.position.clone().sub(target);
         const worldUp = new THREE.Vector3(0, 0, 1);
@@ -479,7 +489,7 @@
     canvas.addEventListener('wheel', event => {
       if (isEditable(event.target)) return;
       event.preventDefault();
-      if (customMode === 'look' || flyMode || pointerLocked) {
+      if (customMode === 'look' || flyMode || rmbLookLocked) {
         adjustFlySpeed(event.deltaY);
         return;
       }
