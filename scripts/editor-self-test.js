@@ -46,8 +46,24 @@ check(largeMap.includes('VALID_TOKEN'), 'Large-map cache tokens must be validate
 check(largeMap.includes('MAX_PATCH_BYTES'), 'Large-map patch input must be bounded.');
 check(largeMap.includes('target.toLowerCase() !== source.toLowerCase()'), 'Large-map saves must stay on the opened VMAP path.');
 
+const largeStream = read('src/large-map-stream-v21.js');
+check(largeStream.includes('INITIAL_CONTAINER_TARGET'), 'Large maps must preload a stable working set before editor handoff.');
+check(largeStream.includes('BATCH = 24'), 'Large-map geometry loading should retain the 24-block fast batch.');
+check(!largeStream.includes('MAX_RESIDENT'), 'Large maps must not restore the old 320-object resident cap.');
+check(!largeStream.includes('unloadInvisible('), 'Camera movement must not evict loaded map geometry.');
+check(largeStream.includes('camera movement never evicts it'), 'Large-map persistent-residency completion marker is missing.');
+
+const mapLocalModels = read('map-local-model-service-v20.js');
+check(mapLocalModels.includes('MAX_SOURCE_CACHE = 48'), 'Map-local shared source cache must remain large enough for Valve maps.');
+check(mapLocalModels.includes('MAX_SOURCE_TASKS = 2'), 'Map-local source conversion concurrency must stay bounded.');
+
+const mapLocalAssets = read('src/map-local-assets-v19.js');
+check(mapLocalAssets.includes('isShaderOnlyMaterial'), 'Shader-only Source 2 materials must not become false ERROR boxes.');
+check(mapLocalAssets.includes('ephPreviewMissing'), 'Non-textured material fallback tracking is missing.');
+
 const startup = read('src/startup-interaction-fix.js');
 check(startup.includes('editor-stability-v28.js'), 'Editor V28 stability pass must be loaded.');
+check(startup.includes('close-save-v28.js'), 'Final close-save handshake must be loaded.');
 
 const stability = read('src/editor-stability-v28.js');
 check(stability.includes('__ephEditorStabilityV28'), 'Editor V28 stability marker is missing.');
