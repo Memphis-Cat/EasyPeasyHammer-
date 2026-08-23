@@ -41,6 +41,9 @@ registerLargeMapSpatialServiceV19({ ipcMain: electron.ipcMain, app: electron.app
 const { registerMapLocalModelServiceV19 } = require('./map-local-model-service-v19');
 registerMapLocalModelServiceV19({ ipcMain: electron.ipcMain, app: electron.app });
 
+const { registerMapLocalMaterialServiceV19 } = require('./map-local-material-service-v19');
+registerMapLocalMaterialServiceV19({ ipcMain: electron.ipcMain, app: electron.app });
+
 const { registerProjectNameService } = require('./project-name-service');
 registerProjectNameService({ ipcMain: electron.ipcMain, app: electron.app });
 
