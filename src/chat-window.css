@@ -26,6 +26,7 @@ button { user-select: none; }
 .chat-reply { margin-bottom: 7px; padding: 6px 8px; border-left: 2px solid #6d737c; background: #0d0e11; color: #92969d; font-size: 10px; }
 .chat-file-card { margin-top: 8px; padding: 8px 9px; border: 1px solid #303238; border-radius: 5px; background: #0c0d10; color: #a6aab1; }
 .chat-image-preview { display: block; max-width: min(480px, 100%); max-height: 320px; margin-bottom: 8px; border-radius: 5px; object-fit: contain; }
+.chat-image-preview.chat-image-failed { min-width: 180px; min-height: 42px; border: 1px dashed #4b4e55; background: #111216; color: transparent; }
 .chat-file-info { display: flex; align-items: center; gap: 6px; }
 .chat-file-info span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-file-info button { height: 25px; padding: 0 8px; border: 1px solid #303238; border-radius: 4px; background: #17181c; color: #ddd; cursor: pointer; }
@@ -44,4 +45,5 @@ button { user-select: none; }
 .chat-file-note { min-height: 22px; margin-top: 7px; display: flex; align-items: center; gap: 8px; color: #747880; font-size: 10px; }
 .chat-file-note span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-file-note button { width: 25px; height: 23px; border: 1px solid #303238; border-radius: 4px; background: #17181c; color: #ddd; cursor: pointer; }
-.chat-draft-image { max-width: 100px; max-height: 70px; border-radius: 4px; object-fit: contain; }
+.chat-transfer-status { min-height: 18px; margin-top: 4px; color: #8f949c; font-size: 10px; }
+.chat-transfer-status[hidden] { display: none; }
