@@ -37,6 +37,7 @@
       "asset-host.js",
       "app-services.js",
       "recent-project-service.js",
+      "entity-fgd-service.js",
       "collab-service.js",
       "collab-network.js",
       "attachment-service.js",
