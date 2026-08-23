@@ -24,6 +24,26 @@ function normalizeRoot(candidate) {
   }
 }
 
+function steamRoots() {
+  const roots = [];
+  const programFiles86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+  const steamInstalls = [path.join(programFiles86, 'Steam'), path.join(programFiles, 'Steam')];
+  for (const steamRoot of steamInstalls) {
+    roots.push(path.join(steamRoot, 'steamapps', 'common', 'Counter-Strike Global Offensive'));
+    const libraries = path.join(steamRoot, 'steamapps', 'libraryfolders.vdf');
+    if (!fs.existsSync(libraries)) continue;
+    try {
+      const text = fs.readFileSync(libraries, 'utf8');
+      for (const match of text.matchAll(/"path"\s*"([^"]+)"/gi)) {
+        const library = match[1].replace(/\\\\/g, '\\');
+        roots.push(path.join(library, 'steamapps', 'common', 'Counter-Strike Global Offensive'));
+      }
+    } catch {}
+  }
+  return roots;
+}
+
 function titleFromClass(className) {
   return String(className || '')
     .split('_')
@@ -122,13 +142,7 @@ function parsePointClasses(text, sourceFile) {
 
 function findCs2Root(app) {
   const config = safeJson(path.join(app.getPath('userData'), 'asset-config.json'), {});
-  const candidates = [config?.cs2Root, process.env.EPH_CS2_PATH];
-  const programFiles86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-  const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-  candidates.push(
-    path.join(programFiles86, 'Steam', 'steamapps', 'common', 'Counter-Strike Global Offensive'),
-    path.join(programFiles, 'Steam', 'steamapps', 'common', 'Counter-Strike Global Offensive')
-  );
+  const candidates = [config?.cs2Root, process.env.EPH_CS2_PATH, ...steamRoots()];
   for (const candidate of candidates) {
     const root = normalizeRoot(candidate);
     if (root) return root;
