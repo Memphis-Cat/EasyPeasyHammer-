@@ -93,6 +93,61 @@ function splitColons(text) {
   }
   out.push(current.trim()); return out;
 }
+function topLevelIndex(text, wanted) {
+  let quoted=false, escaped=false, round=0, square=0, curly=0;
+  for (let i=0;i<String(text||'').length;i++) {
+    const c=text[i];
+    if (escaped) { escaped=false; continue; }
+    if (quoted && c==='\\') { escaped=true; continue; }
+    if (c==='"') { quoted=!quoted; continue; }
+    if (quoted) continue;
+    if (c==='(') round++; else if (c===')') round=Math.max(0,round-1);
+    else if (c==='[') square++; else if (c===']') square=Math.max(0,square-1);
+    else if (c==='{') curly++; else if (c==='}') curly=Math.max(0,curly-1);
+    else if (c===wanted && !round && !square && !curly) return i;
+  }
+  return -1;
+}
+function matchingBlock(text, start) {
+  const open=text[start], close=open==='['?']':open==='{'?'}':null; if(!close)return -1;
+  let depth=0, quoted=false, escaped=false;
+  for(let i=start;i<text.length;i++) {
+    const c=text[i];
+    if(escaped){escaped=false;continue;}
+    if(quoted&&c==='\\'){escaped=true;continue;}
+    if(c==='"'){quoted=!quoted;continue;}
+    if(quoted)continue;
+    if(c===open)depth++; else if(c===close&&--depth===0)return i;
+  }
+  return -1;
+}
+function stripLeadingAttributes(text) {
+  let value=String(text||'').trim();
+  for(let guard=0;guard<12;guard++) {
+    if(!value.startsWith('[')&&!value.startsWith('{')) return { complete:true, text:value };
+    const end=matchingBlock(value,0); if(end<0)return { complete:false, text:value };
+    value=value.slice(end+1).trim();
+  }
+  return { complete:true, text:value };
+}
+function classAssignment(text) {
+  const source=String(text||''); let quoted=false,escaped=false,round=0,square=0,curly=0;
+  for(let i=0;i<source.length;i++) {
+    const c=source[i];
+    if(escaped){escaped=false;continue;}
+    if(quoted&&c==='\\'){escaped=true;continue;}
+    if(c==='"'){quoted=!quoted;continue;}
+    if(quoted)continue;
+    if(c==='(')round++; else if(c===')')round=Math.max(0,round-1);
+    else if(c==='[')square++; else if(c===']')square=Math.max(0,square-1);
+    else if(c==='{')curly++; else if(c==='}')curly=Math.max(0,curly-1);
+    else if(c==='='&&!round&&!square&&!curly) {
+      const match=source.slice(i+1).match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*"([^"]*)")?/);
+      if(match)return { className:match[1], description:match[2]||'', index:i };
+    }
+  }
+  return null;
+}
 function helperCalls(header) {
   const helpers = [];
   const pattern = /\b(editormodel|studio|iconsprite|sprite|size|bbox|wirebox|sphere|cylinder|line|light|frustum|decal|quadbounds|path|origin|arc_range)\s*(?:\(([^)]*)\)|\{([^}]*)\})/gi;
@@ -130,123 +185,124 @@ function metadata(header) {
     group: header.match(/\bentity_tool_group\s*=\s*"([^"]+)"/i)?.[1] || ''
   };
 }
-function choiceBlock(lines, start) {
-  const choices = []; let began = false, depth = 0;
-  for (let i = start; i < Math.min(lines.length, start + 220); i++) {
-    const line = stripComment(lines[i]).trim();
-    if (!began) { if (!line.includes('[')) continue; began = true; }
-    depth += delta(line, '[', ']');
-    const match = line.match(/^\s*([^:\[\]]+?)\s*:\s*"((?:\\.|[^"])*)"(?:\s*:\s*([^,\]]+))?/);
-    if (match) choices.push({ value: unquote(match[1]), label: match[2].replace(/\\"/g, '"'), default: unquote(match[3] || '') });
-    if (began && depth <= 0) break;
-  }
-  return choices;
-}
-function propertyDefinition(lines, start) {
-  let text = '', square = 0, curly = 0;
-  for (let i = start; i < Math.min(lines.length, start + 14); i++) {
-    const line = stripComment(lines[i]).trim();
-    if (!line) continue;
-    text += `${text ? ' ' : ''}${line}`;
-    square += delta(line, '[', ']'); curly += delta(line, '{', '}');
-    const close = text.indexOf(')');
-    if (close >= 0) {
-      const after = text.slice(close + 1);
-      if (splitColons(after).length >= 2 && square <= 0 && curly <= 0) return { text, end: i };
+function collectPropertyHeader(lines, start, type) {
+  let joined='';
+  for(let i=start;i<Math.min(lines.length,start+40);i++) {
+    const line=stripComment(lines[i]).trim(); if(!line)continue;
+    joined+=`${joined?' ':''}${line}`;
+    const close=joined.indexOf(')'); if(close<0)continue;
+    const stripped=stripLeadingAttributes(joined.slice(close+1)); if(!stripped.complete)continue;
+    const rest=stripped.text;
+    const eq=topLevelIndex(rest,'=');
+    if(/\b(?:choices|flags)\b/i.test(type)) {
+      if(eq>=0)return { end:i, rest, beforeEquals:rest.slice(0,eq).trim() };
+      continue;
     }
-    if (i > start && /^@/.test(line)) break;
+    if(rest.startsWith(':')) return { end:i, rest, beforeEquals:eq>=0?rest.slice(0,eq).trim():rest };
   }
-  return { text, end: start };
+  return null;
+}
+function choiceBlock(lines, headerEnd) {
+  let text='', began=false, depth=0, end=headerEnd;
+  for(let i=headerEnd;i<Math.min(lines.length,headerEnd+260);i++) {
+    let line=stripComment(lines[i]);
+    if(i===headerEnd) {
+      const eq=topLevelIndex(line,'=');
+      line=eq>=0?line.slice(eq+1):'';
+    }
+    if(!began) {
+      const at=line.indexOf('['); if(at<0)continue;
+      began=true; line=line.slice(at+1); depth=1;
+    }
+    let segment=line;
+    const closeAt=(()=>{let q=false,e=false,d=depth;for(let x=0;x<line.length;x++){const c=line[x];if(e){e=false;continue;}if(q&&c==='\\'){e=true;continue;}if(c==='"'){q=!q;continue;}if(q)continue;if(c==='[')d++;else if(c===']'){d--;if(d===0)return x;}}return -1;})();
+    if(closeAt>=0){segment=line.slice(0,closeAt);depth=0;} else depth+=delta(line,'[',']');
+    text+=`${text?'\n':''}${segment}`; end=i;
+    if(began&&depth<=0)break;
+  }
+  const choices=[];
+  const regex=/(?:^|\n)\s*(?:"((?:\\.|[^"])*)"|([^:\r\n]+?))\s*:\s*"((?:\\.|[^"])*)"(?:\s*:\s*([^\r\n]+?))?\s*(?=\n|$)/gm;
+  for(const match of text.matchAll(regex)) choices.push({ value:unquote(match[1]??match[2]??''), label:String(match[3]||'').replace(/\\"/g,'"'), default:unquote(match[4]||'') });
+  return { choices, end };
 }
 function parseProperties(blockLines) {
-  const properties = []; let blockDepth = 1;
-  for (let i = 0; i < blockLines.length; i++) {
-    const line = stripComment(blockLines[i]).trim();
-    const before = blockDepth; blockDepth += delta(line, '[', ']');
-    if (!line || before !== 1 || /^(?:input|output)\b/i.test(line)) continue;
-    const startMatch = line.match(/^([A-Za-z_][A-Za-z0-9_.]*)\s*\(\s*([^)]*)\)/);
-    if (!startMatch) continue;
-    const def = propertyDefinition(blockLines, i); i = Math.max(i, def.end);
-    const full = def.text; const close = full.indexOf(')'); if (close < 0) continue;
-    const key = startMatch[1], type = startMatch[2].trim();
-    let tail = full.slice(close + 1).trim();
-    for (let pass = 0; pass < 8; pass++) {
-      const next = tail.replace(/^\s*(?:\[[^\]]*\]|\{[^}]*\})\s*/s, '');
-      if (next === tail) break; tail = next;
-    }
-    if (!tail.startsWith(':') && !/=\s*\[/.test(tail)) continue;
-    const eqIndex = (() => { let q=false,e=false,s=0,c=0; for(let x=0;x<tail.length;x++){const ch=tail[x];if(e){e=false;continue;}if(q&&ch==='\\'){e=true;continue;}if(ch==='"'){q=!q;continue;}if(q)continue;if(ch==='[')s++;else if(ch===']')s=Math.max(0,s-1);else if(ch==='{')c++;else if(ch==='}')c=Math.max(0,c-1);else if(ch==='='&&!s&&!c)return x;}return -1; })();
-    const definition = eqIndex >= 0 ? tail.slice(0, eqIndex) : tail;
-    const parts = splitColons(definition.replace(/^\s*:\s*/, ''));
-    const attrText = full.slice(close + 1, Math.max(close + 1, full.length - tail.length));
-    const property = { key, type, label: unquote(parts[0] || key) || key, default: unquote(parts[1] || ''), description: unquote(parts.slice(2).join(':') || ''), group: attrText.match(/\bgroup\s*=\s*"([^"]+)"/i)?.[1] || '', choices: [] };
-    if (/\b(?:choices|flags)\b/i.test(type)) property.choices = choiceBlock(blockLines, def.end);
-    properties.push(property);
-  }
-  return properties;
-}
-const CLASS_ASSIGNMENT = /(?:^|\s)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*"([^"]*)")?/;
-function parseDeclarations(text, sourceFile) {
-  const lines = String(text || '').split(/\r?\n/).map(stripComment); const out = [];
-  for (let i = 0; i < lines.length; i++) {
-    const first = lines[i].trim(); const kind = first.match(/^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i); if (!kind) continue;
-    const headerLines = [first]; let cursor = i, blockStart = -1, curlyDepth = delta(first, '{', '}');
-    let assignment = CLASS_ASSIGNMENT.exec(first);
-    while (++cursor < lines.length && cursor < i + 240) {
-      const l = lines[cursor].trim();
-      if (!l) continue;
-      if (curlyDepth === 0 && /^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i.test(l) && !assignment) break;
-      const candidate = `${headerLines.join(' ')} ${l}`;
-      const candidateAssignment = CLASS_ASSIGNMENT.exec(candidate);
-      // Only a top-level '[' after '= classname' starts the entity property block.
-      // Arrays inside metadata { ... } are part of editor metadata and must stay
-      // in the header or inherited classes such as Parentname lose their fields.
-      if (curlyDepth === 0 && candidateAssignment && /^\[/.test(l)) { blockStart = cursor; assignment = candidateAssignment; break; }
-      headerLines.push(l);
-      curlyDepth += delta(l, '{', '}');
-      assignment ||= candidateAssignment;
-    }
-    const header = headerLines.join(' '); assignment = CLASS_ASSIGNMENT.exec(header) || assignment; if (!assignment) continue;
-    const helpers = renderHints(header); const meta = metadata(header); const base = header.match(/\bbase\s*\(([^)]*)\)/i)?.[1]?.split(',').map(x => x.trim()).filter(Boolean) || [];
-    const block = [];
-    if (blockStart >= 0) {
-      let d = 0;
-      for (let j = blockStart; j < lines.length; j++) {
-        const l = lines[j]; d += delta(l, '[', ']'); if (j > blockStart) block.push(l);
-        if (d <= 0 && j > blockStart) { cursor = j; break; }
+  const properties=[]; let squareDepth=1, curlyDepth=0;
+  for(let i=0;i<blockLines.length;i++) {
+    const line=stripComment(blockLines[i]).trim();
+    const beforeSquare=squareDepth, beforeCurly=curlyDepth;
+    const squareChange=delta(line,'[',']'), curlyChange=delta(line,'{','}');
+    if(line&&beforeSquare===1&&beforeCurly===0&&!/^(?:input|output)\b/i.test(line)) {
+      const start=line.match(/^([A-Za-z_][A-Za-z0-9_.]*)\s*\(\s*([^)]*)\)/);
+      if(start) {
+        const key=start[1], type=start[2].trim(), header=collectPropertyHeader(blockLines,i,type);
+        if(header) {
+          const clean=header.beforeEquals.replace(/^\s*:\s*/,'');
+          const parts=clean?splitColons(clean):[];
+          const joined=blockLines.slice(i,header.end+1).join(' ');
+          const close=joined.indexOf(')'); const attr=close>=0?joined.slice(close+1):'';
+          let choices=[]; let choiceEnd=header.end;
+          if(/\b(?:choices|flags)\b/i.test(type)) { const parsed=choiceBlock(blockLines,header.end); choices=parsed.choices; choiceEnd=parsed.end; }
+          let defaultValue=unquote(parts[1]||'');
+          if(/\bflags\b/i.test(type)&&!defaultValue&&choices.length) {
+            let mask=0; for(const choice of choices) if(/^(?:1|true|yes)$/i.test(String(choice.default||''))&&Number.isFinite(Number(choice.value))) mask|=Number(choice.value); defaultValue=String(mask);
+          }
+          properties.push({ key, type, label:unquote(parts[0]||key)||key, default:defaultValue, description:unquote(parts.slice(2).join(':')||''), group:attr.match(/\bgroup\s*=\s*"([^"]+)"/i)?.[1]||'', choices });
+          // Do not jump the outer loop: walking each physical line keeps the
+          // nesting depth correct for multiline metadata and choice blocks.
+          void choiceEnd;
+        }
       }
-      i = Math.max(i, cursor);
     }
-    const kindText = kind[1].toLowerCase();
-    const primary = helpers.find(h => ['editormodel','studio'].includes(h.type)) || helpers.find(h => ['iconsprite','sprite'].includes(h.type)) || helpers.find(h => h.bounds) || helpers[0] || { type:'none' };
-    out.push({ className: assignment[1], name: meta.name || assignment[2]?.trim() || titleFromClass(assignment[1]), description: meta.tip || assignment[2]?.trim() || '', group: meta.group || '', kind: kindText === 'solidclass' ? 'solid' : kindText === 'pointclass' ? 'point' : kindText === 'baseclass' ? 'base' : 'extend', baseClasses: base, model: ['editormodel','studio'].includes(primary.type) ? primary.resource || '' : '', renderHint: primary, renderHints: helpers, properties: parseProperties(block), sourceFile });
+    squareDepth+=squareChange; curlyDepth+=curlyChange;
+    if(squareDepth<=0)break;
+  }
+  const byKey=new Map(); for(const property of properties)byKey.set(property.key.toLowerCase(),property); return [...byKey.values()];
+}
+function parseDeclarations(text, sourceFile) {
+  const lines=String(text||'').split(/\r?\n/).map(stripComment), out=[];
+  for(let i=0;i<lines.length;i++) {
+    const first=lines[i].trim(), kindMatch=first.match(/^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i); if(!kindMatch)continue;
+    const headerLines=[first]; let cursor=i, blockStart=-1, curlyDepth=delta(first,'{','}'), assignment=classAssignment(first);
+    while(++cursor<lines.length&&cursor<i+300) {
+      const line=lines[cursor].trim(); if(!line)continue;
+      if(curlyDepth===0&&/^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i.test(line)&&!assignment)break;
+      const candidate=`${headerLines.join(' ')} ${line}`, found=classAssignment(candidate);
+      if(curlyDepth===0&&found&&/^\[/.test(line)){blockStart=cursor;assignment=found;break;}
+      headerLines.push(line); curlyDepth+=delta(line,'{','}'); assignment=found||assignment;
+    }
+    const header=headerLines.join(' '); assignment=classAssignment(header)||assignment; if(!assignment)continue;
+    const helpers=renderHints(header), meta=metadata(header), base=header.match(/\bbase\s*\(([^)]*)\)/i)?.[1]?.split(',').map(x=>x.trim()).filter(Boolean)||[];
+    const block=[];
+    if(blockStart>=0){let d=0;for(let j=blockStart;j<lines.length;j++){const line=lines[j];d+=delta(line,'[',']');if(j>blockStart)block.push(line);if(d<=0&&j>blockStart){cursor=j;break;}}i=Math.max(i,cursor);}
+    const kindText=kindMatch[1].toLowerCase(), primary=helpers.find(h=>['editormodel','studio'].includes(h.type))||helpers.find(h=>['iconsprite','sprite'].includes(h.type))||helpers.find(h=>h.bounds)||helpers[0]||{type:'none'};
+    out.push({ className:assignment.className, name:meta.name||assignment.description?.trim()||titleFromClass(assignment.className), description:meta.tip||assignment.description?.trim()||'', group:meta.group||'', kind:kindText==='solidclass'?'solid':kindText==='pointclass'?'point':kindText==='baseclass'?'base':'extend', baseClasses:base, model:['editormodel','studio'].includes(primary.type)?primary.resource||'':'', renderHint:primary, renderHints:helpers, properties:parseProperties(block), sourceFile });
   }
   return out;
 }
-function merge(map, declaration) {
-  const key = declaration.className.toLowerCase(), old = map.get(key); if (!old) return void map.set(key, declaration);
-  const props = new Map((old.properties || []).map(p => [p.key.toLowerCase(), p])); for (const p of declaration.properties || []) props.set(p.key.toLowerCase(), p);
-  map.set(key, { ...old, ...declaration, kind: declaration.kind === 'extend' ? old.kind : declaration.kind, name: declaration.name || old.name, description: declaration.description || old.description, group: declaration.group || old.group, baseClasses:[...new Set([...(old.baseClasses||[]),...(declaration.baseClasses||[])])], model: declaration.model || old.model || '', renderHint: declaration.renderHint?.type !== 'none' ? declaration.renderHint : old.renderHint, renderHints:[...(old.renderHints||[]),...(declaration.renderHints||[])], properties:[...props.values()] });
+function merge(map,declaration) {
+  const key=declaration.className.toLowerCase(), old=map.get(key); if(!old)return void map.set(key,declaration);
+  const props=new Map((old.properties||[]).map(p=>[p.key.toLowerCase(),p]));for(const p of declaration.properties||[])props.set(p.key.toLowerCase(),p);
+  map.set(key,{...old,...declaration,kind:declaration.kind==='extend'?old.kind:declaration.kind,name:declaration.name||old.name,description:declaration.description||old.description,group:declaration.group||old.group,baseClasses:[...new Set([...(old.baseClasses||[]),...(declaration.baseClasses||[])])],model:declaration.model||old.model||'',renderHint:declaration.renderHint?.type!=='none'?declaration.renderHint:old.renderHint,renderHints:[...(old.renderHints||[]),...(declaration.renderHints||[])],properties:[...props.values()]});
 }
-function resolve(name, all, memo, stack = new Set()) {
-  const key = String(name || '').toLowerCase(); if (memo.has(key)) return memo.get(key); const own = all.get(key); if (!own || stack.has(key)) return own || null; stack.add(key);
-  const props = new Map(), helpers = []; let model = '', hint = null;
-  for (const baseName of own.baseClasses || []) { const base = resolve(baseName, all, memo, stack); if (!base) continue; for (const p of base.properties || []) props.set(p.key.toLowerCase(), p); helpers.push(...(base.renderHints || [])); model ||= base.model || ''; if (!hint && base.renderHint?.type !== 'none') hint = base.renderHint; }
-  for (const p of own.properties || []) props.set(p.key.toLowerCase(), p); helpers.push(...(own.renderHints || []));
-  const value = { ...own, model: own.model || model, renderHint: own.renderHint?.type !== 'none' ? own.renderHint : hint || own.renderHint, renderHints: helpers, properties:[...props.values()] }; stack.delete(key); memo.set(key, value); return value;
+function resolve(name,all,memo,stack=new Set()) {
+  const key=String(name||'').toLowerCase(); if(memo.has(key))return memo.get(key);const own=all.get(key);if(!own||stack.has(key))return own||null;stack.add(key);
+  const props=new Map(),helpers=[];let model='',hint=null;
+  for(const baseName of own.baseClasses||[]){const base=resolve(baseName,all,memo,stack);if(!base)continue;for(const p of base.properties||[])props.set(p.key.toLowerCase(),p);helpers.push(...(base.renderHints||[]));model||=base.model||'';if(!hint&&base.renderHint?.type!=='none')hint=base.renderHint;}
+  for(const p of own.properties||[])props.set(p.key.toLowerCase(),p);helpers.push(...(own.renderHints||[]));
+  const value={...own,model:own.model||model,renderHint:own.renderHint?.type!=='none'?own.renderHint:hint||own.renderHint,renderHints:helpers,properties:[...props.values()]};stack.delete(key);memo.set(key,value);return value;
 }
 function catalogForInstall(app) {
-  const root = findCs2Root(app); if (!root) return { ok:false, error:'CS2 installation not configured.', entities:[] };
-  const files=[]; for (const folder of [path.join(root,'game','csgo'),path.join(root,'game','core'),path.join(root,'game','sdktools')]) collectFgds(folder,files);
-  const all=new Map(); let parseErrors=0;
-  for (const file of files) { try { const rel=path.relative(root,file).replace(/\\/g,'/'); for (const declaration of parseDeclarations(fs.readFileSync(file,'utf8'),rel)) merge(all,declaration); } catch (error) { parseErrors++; globalThis.__ephAppLog?.('warning','fgd',`Could not parse ${file}`,error); } }
-  const memo=new Map(); const entities=[...all.keys()].map(k=>resolve(k,all,memo)).filter(x=>x&&['point','solid'].includes(x.kind)&&x.className!=='worldspawn').sort((a,b)=>a.name.localeCompare(b.name)||a.className.localeCompare(b.className));
-  const pointEntities=entities.filter(x=>x.kind==='point').length, solidEntities=entities.filter(x=>x.kind==='solid').length;
-  globalThis.__ephAppLog?.('normal','fgd',`Hammer FGD catalog built: ${entities.length} entities from ${files.length} files`,{ point:pointEntities, solid:solidEntities, parseErrors });
-  return { ok:true, root, fgdFiles:files.length, parseErrors, pointEntities, solidEntities, entities };
+  const root=findCs2Root(app);if(!root)return{ok:false,error:'CS2 installation not configured.',entities:[]};
+  const files=[];for(const folder of[path.join(root,'game','csgo'),path.join(root,'game','core'),path.join(root,'game','sdktools')])collectFgds(folder,files);
+  const all=new Map();let parseErrors=0;
+  for(const file of files){try{const rel=path.relative(root,file).replace(/\\/g,'/');for(const declaration of parseDeclarations(fs.readFileSync(file,'utf8'),rel))merge(all,declaration);}catch(error){parseErrors++;globalThis.__ephAppLog?.('warning','fgd',`Could not parse ${file}`,error);}}
+  const memo=new Map(),entities=[...all.keys()].map(k=>resolve(k,all,memo)).filter(x=>x&&['point','solid'].includes(x.kind)&&x.className!=='worldspawn').sort((a,b)=>a.name.localeCompare(b.name)||a.className.localeCompare(b.className));
+  const pointEntities=entities.filter(x=>x.kind==='point').length,solidEntities=entities.filter(x=>x.kind==='solid').length;
+  globalThis.__ephAppLog?.('normal','fgd',`Hammer FGD catalog built: ${entities.length} entities from ${files.length} files`,{point:pointEntities,solid:solidEntities,parseErrors});
+  return{ok:true,root,fgdFiles:files.length,parseErrors,pointEntities,solidEntities,entities};
 }
-function registerEntityFgdServiceV18({ ipcMain, app }) {
-  if (globalThis.__ephEntityFgdServiceV18) return; globalThis.__ephEntityFgdServiceV18=true; try{ipcMain.removeHandler('entities:fgd-catalog');}catch{}
-  let cache=null,time=0; ipcMain.handle('entities:fgd-catalog',()=>{if(!cache||Date.now()-time>60000){cache=catalogForInstall(app);time=Date.now();}return cache;});
+function registerEntityFgdServiceV18({ipcMain,app}) {
+  if(globalThis.__ephEntityFgdServiceV18)return;globalThis.__ephEntityFgdServiceV18=true;try{ipcMain.removeHandler('entities:fgd-catalog');}catch{}
+  let cache=null,time=0;ipcMain.handle('entities:fgd-catalog',()=>{if(!cache||Date.now()-time>60000){cache=catalogForInstall(app);time=Date.now();}return cache;});
 }
 module.exports={registerEntityFgdServiceV18,catalogForInstall,parseDeclarations};
