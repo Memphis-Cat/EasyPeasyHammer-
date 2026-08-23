@@ -1,0 +1,32 @@
+/* byanca */
+.eph-entity-compat-section { padding-bottom: 11px; }
+.eph-entity-description { margin: 0 0 8px; line-height: 1.45; }
+.eph-entity-kv-list {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.eph-entity-kv-row {
+  display: grid;
+  grid-template-columns: minmax(88px, .8fr) minmax(110px, 1.2fr) 28px;
+  gap: 5px;
+  align-items: center;
+}
+.eph-entity-kv-row .prop-input { min-width: 0; }
+.eph-entity-kv-remove { width: 28px; min-width: 28px; padding: 0; }
+.eph-entity-kv-add {
+  display: grid;
+  grid-template-columns: minmax(88px, .8fr) minmax(110px, 1.2fr) 48px;
+  gap: 5px;
+  margin-top: 7px;
+}
+.eph-entity-kv-empty {
+  padding: 7px 8px;
+  border: 1px dashed #303844;
+  border-radius: 4px;
+  color: #77818d;
+  font-size: 10px;
+}
+.eph-entity-compat-section code { color: #b7c7d8; font-family: Consolas, monospace; }
