@@ -8,6 +8,8 @@
   const MAX_LOCAL_MODEL_LOADS = 2;
   const modelQueue = [];
   let modelLoads = 0;
+  let batchedObjects = 0;
+  let removedMaterialSlots = 0;
 
   function report(message, meta = null) {
     console.info(`[Render Performance] ${message}`, meta || '');
@@ -44,7 +46,8 @@
     if (oldMaterials.length < 2 || oldGroups.length < 2) return visual;
 
     const attributes = Object.entries(oldGeometry.attributes || {});
-    if (!attributes.length || !oldGeometry.getAttribute?.('position')) return visual;
+    const positionAttribute = oldGeometry.getAttribute?.('position');
+    if (!attributes.length || !positionAttribute) return visual;
 
     const buckets = new Map();
     for (const group of oldGroups) {
@@ -63,7 +66,7 @@
     for (const bucket of buckets.values()) {
       for (const group of bucket.groups) {
         const start = Math.max(0, Number(group.start) || 0);
-        const end = start + Math.max(0, Number(group.count) || 0);
+        const end = Math.min(positionAttribute.count, start + Math.max(0, Number(group.count) || 0));
         for (const [name, attribute] of attributes) {
           const values = bucket.values.get(name);
           const itemSize = attribute.itemSize;
@@ -75,42 +78,35 @@
       }
     }
 
+    const orderedBuckets = [...buckets.values()].filter(bucket => (bucket.values.get('position')?.length || 0) > 0);
+    if (!orderedBuckets.length) return visual;
+
     const Geometry = oldGeometry.constructor;
     const geometry = new Geometry();
-    let cursor = 0;
-    const uniqueMaterials = [];
-    const representative = new Set();
+    const uniqueMaterials = orderedBuckets.map(bucket => bucket.material);
+    const representative = new Set(uniqueMaterials);
 
-    for (const bucket of buckets.values()) {
-      const positionValues = bucket.values.get('position') || [];
-      const vertexCount = positionValues.length / (oldGeometry.getAttribute('position')?.itemSize || 3);
-      if (!vertexCount) continue;
-      const materialIndex = uniqueMaterials.length;
-      uniqueMaterials.push(bucket.material);
-      representative.add(bucket.material);
-      for (const [name, attribute] of attributes) {
-        const Attribute = attribute.constructor;
-        const ArrayType = attribute.array.constructor;
-        const existing = geometry.getAttribute(name);
+    for (const [name, attribute] of attributes) {
+      let scalarCount = 0;
+      for (const bucket of orderedBuckets) scalarCount += bucket.values.get(name)?.length || 0;
+      const ArrayType = attribute.array.constructor;
+      const combined = new ArrayType(scalarCount);
+      let offset = 0;
+      for (const bucket of orderedBuckets) {
         const values = bucket.values.get(name) || [];
-        const typed = new ArrayType(values);
-        if (!existing) geometry.setAttribute(name, new Attribute(typed, attribute.itemSize, attribute.normalized));
-        else {
-          // This branch is not used because each final attribute is assembled below.
-        }
+        for (let i = 0; i < values.length; i++) combined[offset++] = values[i];
       }
-      geometry.addGroup(cursor, vertexCount, materialIndex);
-      cursor += vertexCount;
+      const Attribute = attribute.constructor;
+      geometry.setAttribute(name, new Attribute(combined, attribute.itemSize, attribute.normalized));
     }
 
-    // The loop above created each attribute from only the first bucket. Rebuild
-    // the attributes once from all buckets in final draw order.
-    for (const [name, attribute] of attributes) {
-      const combined = [];
-      for (const bucket of buckets.values()) combined.push(...(bucket.values.get(name) || []));
-      const Attribute = attribute.constructor;
-      const ArrayType = attribute.array.constructor;
-      geometry.setAttribute(name, new Attribute(new ArrayType(combined), attribute.itemSize, attribute.normalized));
+    let cursor = 0;
+    for (let index = 0; index < orderedBuckets.length; index++) {
+      const bucket = orderedBuckets[index];
+      const vertexCount = (bucket.values.get('position')?.length || 0) / positionAttribute.itemSize;
+      if (!vertexCount) continue;
+      geometry.addGroup(cursor, vertexCount, index);
+      cursor += vertexCount;
     }
 
     geometry.computeBoundingBox?.();
@@ -129,6 +125,15 @@
     object.ephRenderBatched = true;
     object.ephOriginalMaterialSlots = oldMaterials.length;
     object.ephBatchedMaterialSlots = uniqueMaterials.length;
+    batchedObjects++;
+    removedMaterialSlots += Math.max(0, oldMaterials.length - uniqueMaterials.length);
+    if (batchedObjects <= 3 || batchedObjects % 25 === 0) {
+      report(`Batched ${batchedObjects} streamed meshes; removed ${removedMaterialSlots.toLocaleString()} duplicate material slots.`, {
+        latestFaces: object.faces?.length || 0,
+        latestBefore: oldMaterials.length,
+        latestAfter: uniqueMaterials.length,
+      });
+    }
     return visual;
   }
 
