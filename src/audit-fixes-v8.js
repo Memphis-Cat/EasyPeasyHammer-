@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 
 const api = window.easyPeasyHammer;
+const SPECIAL_MESH_TYPES = new Set(['terrain', 'decal']);
 
 function projectFolderKey() {
   return S.project?.vmapPath ? `eph-folders:${S.project.vmapPath}` : null;
@@ -64,9 +65,6 @@ function installSharedFolderRestoreFix() {
   loadProject = async function(project, ui) {
     const result = await rawLoadProject(project, ui);
     if (result && (Array.isArray(ui?.ephFolders) || ui?.ephParents)) {
-      // advanced-ui's local folder restore runs on a short timer. Re-apply the
-      // authoritative shared grouping after that pass so an empty local cache
-      // cannot erase the collaboration folders.
       setTimeout(() => {
         window.EPH_APPLY_SHARED_FOLDERS?.(ui);
         persistFolders();
@@ -91,6 +89,37 @@ function installRotateSnapSync() {
   };
   renderViewportControls.__ephAuditRotateSync = true;
   renderViewportControls();
+}
+
+function installSpecialMeshProjectionIsolation() {
+  if (VMAP.__ephAuditSpecialProjectionIsolation) return;
+  VMAP.__ephAuditSpecialProjectionIsolation = true;
+
+  const rawApply = VMAP.applyObjectToDocument.bind(VMAP);
+  VMAP.applyObjectToDocument = function(doc, object) {
+    if (!SPECIAL_MESH_TYPES.has(object?.type)) return rawApply(doc, object);
+    const projectionMode = object.ephProjectionMode;
+    delete object.ephProjectionMode;
+    try { return rawApply(doc, object); }
+    finally {
+      if (projectionMode !== undefined) object.ephProjectionMode = projectionMode;
+      object.type = object.type === 'part' ? (String(object.name || '').startsWith('Decal_') ? 'decal' : 'terrain') : object.type;
+    }
+  };
+
+  const rawPrepare = VMAP.prepareForSave.bind(VMAP);
+  VMAP.prepareForSave = function(doc, objects) {
+    const masked = [];
+    for (const object of objects || []) {
+      if (!SPECIAL_MESH_TYPES.has(object?.type)) continue;
+      masked.push([object, object.ephProjectionMode]);
+      delete object.ephProjectionMode;
+    }
+    try { return rawPrepare(doc, objects); }
+    finally {
+      for (const [object, mode] of masked) if (mode !== undefined) object.ephProjectionMode = mode;
+    }
+  };
 }
 
 function fixDecalMaterials(root) {
@@ -292,6 +321,7 @@ function install(viewport = S.viewport || window.EPH3D) {
   installFolderFixes();
   installSharedFolderRestoreFix();
   installRotateSnapSync();
+  installSpecialMeshProjectionIsolation();
   installTerrainResubdivisionFix();
   installCollaborationCleanup();
   installBottomPlaceholderFix();
