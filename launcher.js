@@ -21,6 +21,11 @@ registerRecentProjectService({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerEntityFgdService } = require('./entity-fgd-service');
 registerEntityFgdService({ ipcMain: electron.ipcMain, app: electron.app });
 
+// v17 replaces the basic point-only FGD handler with Hammer's installed
+// PointClass + SolidClass metadata, inherited properties, choices and render hints.
+const { registerEntityFgdServiceV17 } = require('./src/entity-fgd-service-v17');
+registerEntityFgdServiceV17({ ipcMain: electron.ipcMain, app: electron.app });
+
 const { registerLargeMapService } = require('./large-map-service');
 registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
 
