@@ -87,13 +87,15 @@ function main() {
 
   const text = VMAP.stringify(prepared);
   assertValidVmapText(text);
+  if (!text.includes('EPH_HELPER_grenades_')) throw new Error('Grenade collision helper was not serialized.');
+  if (!text.includes('EPH_HELPER_bullets_')) throw new Error('Bullet collision helper was not serialized.');
 
   const reparsed = VMAP.parse(text);
   const revalidation = VMAP.validate(reparsed);
   if (!revalidation.ok) throw new Error(`Serialized VMAP round-trip failed: ${revalidation.errors.join(' ')}`);
 
   const extracted = VMAP.extractObjects(reparsed).filter(object => object?.dmxId);
-  if (extracted.length < 5) throw new Error(`Expected primary geometry plus collision helpers after round-trip, got ${extracted.length} editable nodes.`);
+  if (extracted.length < 2) throw new Error(`Expected the Part and terrain after round-trip, got ${extracted.length} editable nodes.`);
 
   console.log('VMAP compatibility self-test passed.');
   console.log(`Validated ${text.length.toLocaleString()} characters of serialized VMAP text.`);
