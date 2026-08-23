@@ -2,7 +2,6 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const { assertValidVmapText } = require('./vmap-text-preflight');
 
 if (!fs.__ephVmapWriteGuardInstalled) {
@@ -12,10 +11,12 @@ if (!fs.__ephVmapWriteGuardInstalled) {
   const rawCopyFileSync = fs.copyFileSync.bind(fs);
   const rawReadFileSync = fs.readFileSync.bind(fs);
 
-  const isVmapTarget = filePath => {
-    const value = String(filePath || '').toLowerCase();
+  const normalized = filePath => String(filePath || '').toLowerCase();
+  const isGeneratedVmapWrite = filePath => {
+    const value = normalized(filePath);
     return value.endsWith('.vmap') || value.endsWith('.vmap.eph-tmp');
   };
+  const isGeneratedTemp = filePath => normalized(filePath).endsWith('.vmap.eph-tmp');
 
   const textFromData = (data, options) => {
     if (Buffer.isBuffer(data)) return data.toString(typeof options === 'string' ? options : options?.encoding || 'utf8');
@@ -24,7 +25,7 @@ if (!fs.__ephVmapWriteGuardInstalled) {
   };
 
   fs.writeFileSync = function(filePath, data, options) {
-    if (isVmapTarget(filePath)) {
+    if (isGeneratedVmapWrite(filePath)) {
       const text = textFromData(data, options);
       if (text === null) throw new Error('VMAP disk write refused non-text data.');
       assertValidVmapText(text);
@@ -33,7 +34,9 @@ if (!fs.__ephVmapWriteGuardInstalled) {
   };
 
   fs.copyFileSync = function(source, destination, mode) {
-    if (isVmapTarget(destination)) {
+    // Backups may intentionally preserve an original binary DMX VMAP byte-for-byte.
+    // Only validate copies sourced from EasyPeasyHammer's generated text temp file.
+    if (isGeneratedVmapWrite(destination) && isGeneratedTemp(source)) {
       const text = rawReadFileSync(source, 'utf8');
       assertValidVmapText(text);
     }
