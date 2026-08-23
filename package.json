@@ -1,7 +1,7 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
@@ -36,6 +36,7 @@
       "app-services.js",
       "collab-service.js",
       "collab-network.js",
+      "attachment-service.js",
       "src/**/*",
       "assets/**/*",
       "node_modules/ws/**/*",
