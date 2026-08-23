@@ -4,6 +4,7 @@ setlocal
 cd /d "%~dp0"
 set "EXIT_CODE=0"
 set "EB_VERSION="
+set "SAFE_EB_VERSION=26.15.3"
 
 set "EPH_NO_PAUSE=1"
 call Build_Backend.bat
@@ -16,6 +17,11 @@ call npm install --ignore-scripts
 if errorlevel 1 goto error
 
 echo.
+echo Running editor security/performance self-test...
+node scripts\editor-self-test.js
+if errorlevel 1 goto error
+
+echo.
 echo Running VMAP compatibility self-test...
 node scripts\vmap-self-test.js
 if errorlevel 1 goto error
@@ -23,15 +29,15 @@ if errorlevel 1 goto error
 echo.
 echo Verifying electron-builder version...
 for /f "usebackq delims=" %%V in (`node -p "require('./node_modules/electron-builder/package.json').version" 2^>nul`) do set "EB_VERSION=%%V"
-if not "%EB_VERSION%"=="26.0.11" (
-  echo electron-builder %EB_VERSION% is installed. Installing stable 26.0.11...
-  call npm install --save-dev --save-exact electron-builder@26.0.11 --ignore-scripts
+if not "%EB_VERSION%"=="%SAFE_EB_VERSION%" (
+  echo electron-builder %EB_VERSION% is installed. Installing patched %SAFE_EB_VERSION%...
+  call npm install --save-dev --save-exact electron-builder@%SAFE_EB_VERSION% --ignore-scripts
   if errorlevel 1 goto error
   set "EB_VERSION="
   for /f "usebackq delims=" %%V in (`node -p "require('./node_modules/electron-builder/package.json').version" 2^>nul`) do set "EB_VERSION=%%V"
 )
-if not "%EB_VERSION%"=="26.0.11" (
-  echo Could not verify electron-builder 26.0.11 after installation.
+if not "%EB_VERSION%"=="%SAFE_EB_VERSION%" (
+  echo Could not verify electron-builder %SAFE_EB_VERSION% after installation.
   goto error
 )
 
