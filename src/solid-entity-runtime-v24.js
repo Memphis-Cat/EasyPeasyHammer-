@@ -79,13 +79,14 @@
     if (classKey(wrapper?.className) !== 'func_bomb_target') return false;
     wrapper.entityProperties ||= {};
     let changed = false;
-    const ensure = (key, value) => {
-      if (wrapper.entityProperties[key] !== undefined && wrapper.entityProperties[key] !== null && String(wrapper.entityProperties[key]) !== '') return;
+    const ensure = (key, value, allowEmpty = false) => {
+      const exists = wrapper.entityProperties[key] !== undefined && wrapper.entityProperties[key] !== null;
+      if (exists && (allowEmpty || String(wrapper.entityProperties[key]) !== '')) return;
       wrapper.entityProperties[key] = String(value);
       changed = true;
     };
     ensure('heistbomb', '0');
-    ensure('bomb_mount_target', '');
+    ensure('bomb_mount_target', '', true);
     ensure('bomb_site_designation', chooseBombSite(wrapper));
     if (changed) VMAP?.applyObjectToDocument?.(S.doc, wrapper);
     return changed;
@@ -143,8 +144,6 @@
       return rawMarker(object);
     };
     wrapped.__ephSolidEntityV24 = true;
-    // entity-fidelity-v18's short startup guard intentionally leaves any final
-    // marker carrying this flag alone. This prevents it restoring the ERROR cube.
     wrapped.__ephHammerFinalV18 = true;
     wrapped.__ephPrevious = rawMarker;
     vp.createEntityMarker = wrapped;
