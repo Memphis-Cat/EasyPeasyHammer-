@@ -6,6 +6,9 @@
   const sizeCache = new Map();
   const projectionState = new WeakMap();
   const announced = new WeakSet();
+  const scheduled = new WeakSet();
+  const synchronizing = new WeakSet();
+  const semanticNames = new WeakMap();
 
   async function textureSizeFor(materialPath) {
     if (!materialPath || materialPath === 'ERROR') return [512, 512];
@@ -81,9 +84,14 @@
 
     if (before === after) return;
 
-    VMAP.applyObjectToDocument(S.doc, object);
-    S.viewport?.updateObject(object);
-    if (current()?.id === object.id) renderProperties();
+    synchronizing.add(object);
+    try {
+      VMAP.applyObjectToDocument(S.doc, object);
+      S.viewport?.updateObject(object);
+      if (current()?.id === object.id) renderProperties();
+    } finally {
+      synchronizing.delete(object);
+    }
 
     if (!announced.has(object)) {
       announced.add(object);
@@ -92,13 +100,30 @@
     markDirty(`Updated texture projection on ${object.name}`);
   }
 
+  function scheduleProjection(object) {
+    if (!object || object.type !== 'part' || object.ephLargeStreamed || synchronizing.has(object) || scheduled.has(object)) return;
+    projectionState.delete(object);
+    semanticNames.delete(object);
+    scheduled.add(object);
+    queueMicrotask(() => {
+      scheduled.delete(object);
+      synchronizeProjection(object);
+    });
+  }
+
   const originalFaceLabel = faceLabel;
   faceLabel = function(index, count) {
     const object = current();
     if (object?.type === 'part' && object.faces?.[index] && window.EPH_FIDELITY_V2?.semanticFaceName) {
-      const name = window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, object.faces[index]);
-      const names = object.faces.map(face => window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, face));
-      if (new Set(names).size === names.length) return name.charAt(0).toUpperCase() + name.slice(1);
+      let names = semanticNames.get(object);
+      if (!names || names.length !== object.faces.length) {
+        names = object.faces.map(face => window.EPH_FIDELITY_V2.semanticFaceName(object.vertices, face));
+        semanticNames.set(object, names);
+      }
+      if (new Set(names).size === names.length) {
+        const name = names[index];
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      }
     }
     return originalFaceLabel(index, count);
   };
@@ -114,9 +139,14 @@
       if (!S.objects.includes(object) || !window.EPH_TEXTURE_PROJECTION_V4) return;
       window.EPH_TEXTURE_PROJECTION_V4.setFaceMaterialInfo(object, faces, width, height);
       projectionState.delete(object);
-      VMAP.applyObjectToDocument(S.doc, object);
-      S.viewport?.updateObject(object);
-      if (current()?.id === object.id) renderProperties();
+      synchronizing.add(object);
+      try {
+        VMAP.applyObjectToDocument(S.doc, object);
+        S.viewport?.updateObject(object);
+        if (current()?.id === object.id) renderProperties();
+      } finally {
+        synchronizing.delete(object);
+      }
     });
   };
 
@@ -127,10 +157,36 @@
 
   const synchronizeAll = () => {
     for (const object of S.objects || []) {
-      if (object?.type === 'part' && !object.ephLargeStreamed) synchronizeProjection(object);
+      if (object?.type === 'part' && !object.ephLargeStreamed) scheduleProjection(object);
     }
   };
 
+  // Watch actual object writes instead of hashing every Part every second while
+  // the editor is idle.
+  if (VMAP.applyObjectToDocument && !VMAP.applyObjectToDocument.__ephProjectionEvents) {
+    const rawApply = VMAP.applyObjectToDocument.bind(VMAP);
+    const wrappedApply = function(doc, object, ...args) {
+      const result = rawApply(doc, object, ...args);
+      if (doc === S.doc) scheduleProjection(object);
+      return result;
+    };
+    wrappedApply.__ephProjectionEvents = true;
+    wrappedApply.__ephPrevious = rawApply;
+    VMAP.applyObjectToDocument = wrappedApply;
+  }
+
+  if (typeof loadProject === 'function' && !loadProject.__ephProjectionEvents) {
+    const rawLoad = loadProject;
+    const wrappedLoad = async function(...args) {
+      const result = await rawLoad(...args);
+      if (result) setTimeout(synchronizeAll, 0);
+      return result;
+    };
+    wrappedLoad.__ephProjectionEvents = true;
+    wrappedLoad.__ephPrevious = rawLoad;
+    try { loadProject = wrappedLoad; } catch {}
+    window.loadProject = wrappedLoad;
+  }
+
   setTimeout(synchronizeAll, 80);
-  setInterval(synchronizeAll, 1000);
 })();
