@@ -185,6 +185,7 @@ async function ensureViewportBundle() {
   await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
   await safeLoadPass('bundled/audit-fixes-v8.bundle.js', 'ephAuditFixesV8Bundle');
   await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
+  await safeLoadPass('collab-terrain-live-v8.js', 'ephCollabTerrainLiveV8');
   await safeLoadPass('collab-camera-v6.js', 'ephCollabCameraV6');
   await safeLoadPass('bundled/collab-visuals.bundle.js', 'ephCollabVisualsBundle');
   await safeLoadPass('bell1.js', 'ephBell1');
