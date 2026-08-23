@@ -108,6 +108,7 @@
   loadPass('collision-export-v25.js', '__ephCollisionExportV25');
   loadPass('large-map-ui-fast-v27.js', '__ephLargeMapUiFastV27');
   loadPass('editor-stability-v28.js', '__ephEditorStabilityV28');
+  loadPass('close-save-v28.js', '__ephCloseSaveV28');
 
   repair();
   requestAnimationFrame(repair);
