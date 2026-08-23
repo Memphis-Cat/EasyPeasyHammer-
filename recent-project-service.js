@@ -38,17 +38,22 @@ function registerRecentProjectService({ ipcMain, app }) {
 
   ipcMain.handle('project:delete-recent', async (_event, payload) => {
     try {
-      const vmapPath = path.resolve(String(payload?.vmapPath || ''));
-      if (!vmapPath || path.extname(vmapPath).toLowerCase() !== '.vmap') {
+      const rawPath = String(payload?.vmapPath || '').trim();
+      if (!rawPath) return { ok: false, error: 'Invalid VMAP path.' };
+      const vmapPath = path.resolve(rawPath);
+      if (path.extname(vmapPath).toLowerCase() !== '.vmap') {
         return { ok: false, error: 'Invalid VMAP path.' };
       }
 
       const appRoot = process.env.PORTABLE_EXECUTABLE_DIR
         ? path.resolve(process.env.PORTABLE_EXECUTABLE_DIR)
         : app.isPackaged ? path.dirname(process.execPath) : __dirname;
-      const projectsRoot = path.join(appRoot, 'Projects');
-      const projectFolder = path.dirname(vmapPath);
-      const isManagedProject = inside(projectsRoot, projectFolder) || path.resolve(projectFolder) === path.resolve(projectsRoot);
+      const projectsRoot = path.resolve(appRoot, 'Projects');
+      const projectFolder = path.resolve(path.dirname(vmapPath));
+      // A managed project is a folder *inside* Projects. Never consider the
+      // Projects root itself deletable, even if somebody manually placed a
+      // loose VMAP directly in that folder.
+      const isManagedProject = inside(projectsRoot, projectFolder);
 
       let target = vmapPath;
       let deletedProjectFolder = false;
