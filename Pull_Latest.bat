@@ -40,7 +40,7 @@ goto updated
 :dependencies
 echo.
 echo Dependency definitions changed. Updating npm packages...
-call npm install
+call npm install --ignore-scripts
 if errorlevel 1 goto npmerror
 
 :updated
@@ -52,7 +52,7 @@ goto done
 set "EXIT_CODE=1"
 echo.
 echo Git files are updated, but npm install failed.
-echo Run npm install manually after fixing the npm/network error above.
+echo Run npm install --ignore-scripts manually after fixing the npm/network error above.
 goto done
 
 :pullerror
