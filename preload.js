@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   saveProfile: (username) => ipcRenderer.invoke('profile:set', username),
   openVmap: () => ipcRenderer.invoke('project:open-vmap'),
   createProject: (name) => ipcRenderer.invoke('project:create', name),
+  listRecentProjects: (limit = 24) => ipcRenderer.invoke('project:list-recents', limit),
+  openRecentProject: (vmapPath) => ipcRenderer.invoke('project:open-recent', vmapPath),
   inspectVmap: (vmapPath) => ipcRenderer.invoke('project:inspect-vmap', vmapPath),
   loadVmap,
   decodeVmap: (vmapPath) => ipcRenderer.invoke('project:decode-vmap', vmapPath),
