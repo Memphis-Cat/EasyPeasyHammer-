@@ -6,7 +6,8 @@ const crypto = require('crypto');
 const ws = require('ws');
 
 const COLLAB_PORT = 27015;
-const MAX_COLLAB_MESSAGE_BYTES = 128 * 1024 * 1024;
+const DEFAULT_COLLAB_MESSAGE_BYTES = 16 * 1024 * 1024;
+const MAX_COLLAB_MESSAGE_BYTES = 32 * 1024 * 1024;
 const MAX_PASTED_IMAGE_BYTES = 64 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 const IMAGE_MIME_EXT = new Map([
@@ -19,6 +20,12 @@ const IMAGE_MIME_EXT = new Map([
   ['image/x-ms-bmp', '.bmp'],
 ]);
 
+function safePayloadLimit(value) {
+  const requested = Number(value);
+  if (Number.isFinite(requested) && requested > 0) return Math.min(requested, MAX_COLLAB_MESSAGE_BYTES);
+  return DEFAULT_COLLAB_MESSAGE_BYTES;
+}
+
 if (!globalThis.__ephFixedCollaborationPort) {
   globalThis.__ephFixedCollaborationPort = true;
 
@@ -27,7 +34,10 @@ if (!globalThis.__ephFixedCollaborationPort) {
     constructor(options = {}, callback) {
       const next = { ...options };
       if (!next.server && !next.noServer && (next.port === 0 || next.port == null)) next.port = COLLAB_PORT;
-      next.maxPayload = Math.max(Number(next.maxPayload) || 0, MAX_COLLAB_MESSAGE_BYTES);
+      // Preserve deliberately smaller per-feature limits (file chunks are about
+      // 516 KiB) and cap unspecified/oversized callers. The old Math.max(...,
+      // 128 MiB) silently defeated collab-service's own maxPayload protection.
+      next.maxPayload = safePayloadLimit(next.maxPayload);
       super(next, callback);
     }
   };
@@ -37,11 +47,11 @@ if (!globalThis.__ephFixedCollaborationPort) {
   class EasyPeasyHammerWebSocket extends NativeWebSocket {
     constructor(address, protocols, options) {
       if (protocols && typeof protocols === 'object' && !Array.isArray(protocols)) {
-        const next = { ...protocols, maxPayload: Math.max(Number(protocols.maxPayload) || 0, MAX_COLLAB_MESSAGE_BYTES) };
+        const next = { ...protocols, maxPayload: safePayloadLimit(protocols.maxPayload) };
         super(address, next);
         return;
       }
-      const next = { ...(options || {}), maxPayload: Math.max(Number(options?.maxPayload) || 0, MAX_COLLAB_MESSAGE_BYTES) };
+      const next = { ...(options || {}), maxPayload: safePayloadLimit(options?.maxPayload) };
       super(address, protocols, next);
     }
   }
