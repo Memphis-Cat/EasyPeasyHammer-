@@ -202,6 +202,7 @@ async function ensureViewportBundle() {
   await safeLoadPass('vertex-paint-fix-v14.js', 'ephVertexPaintFixV14');
   await safeLoadPass('entity-compat-v15.js', 'ephEntityCompatV15');
   await safeLoadPass('entity-mesh-compat-v15.js', 'ephEntityMeshCompatV15');
+  await safeLoadPass('fgd-catalog-v15.js', 'ephFgdCatalogV15');
   await safeLoadPass('complex-vmap-v15.js', 'ephComplexVmapV15');
   await safeLoadPass('layout-safe-v14.js', 'ephLayoutSafeV14');
   await safeLoadPass('startup-recents-v14.js', 'ephStartupRecentsV14');
