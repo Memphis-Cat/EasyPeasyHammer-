@@ -15,4 +15,7 @@ require('./collab-network');
 const { registerAttachmentService } = require('./attachment-service');
 registerAttachmentService({ ipcMain: electron.ipcMain, app: electron.app });
 
+const { registerRecentProjectService } = require('./recent-project-service');
+registerRecentProjectService({ ipcMain: electron.ipcMain, app: electron.app });
+
 require('./main');
