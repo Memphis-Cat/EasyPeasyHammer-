@@ -64,6 +64,14 @@ check(mapLocalAssets.includes('ephPreviewMissing'), 'Non-textured material fallb
 const startup = read('src/startup-interaction-fix.js');
 check(startup.includes('editor-stability-v28.js'), 'Editor V28 stability pass must be loaded.');
 check(startup.includes('close-save-v28.js'), 'Final close-save handshake must be loaded.');
+check(startup.includes('solid-entity-unified-v30.js'), 'Unified CS2 mesh-entity runtime must be loaded.');
+
+const solidEntity = read('src/solid-entity-unified-v30.js');
+check(solidEntity.includes("TRIGGER_MATERIAL = 'materials/tools/toolstrigger.vmat'"), 'CS2 trigger volumes must keep the Hammer trigger material.');
+check(solidEntity.includes('part.collision !== true'), 'Trigger child meshes must retain default Hammer physics instead of physicsType none.');
+check(solidEntity.includes('ephMeshEntityChild'), 'Mesh-entity child Parts must remain owned by their entity.');
+check(solidEntity.includes('canonicalId'), '3D selection must canonicalize entity child meshes to their parent entity.');
+check(solidEntity.includes('row.hidden = Boolean(object?.ephMeshEntityChild)'), 'Entity child Parts must stay hidden from the Scene tree.');
 
 const stability = read('src/editor-stability-v28.js');
 check(stability.includes('__ephEditorStabilityV28'), 'Editor V28 stability marker is missing.');
