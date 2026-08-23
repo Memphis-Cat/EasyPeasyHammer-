@@ -21,4 +21,10 @@ registerRecentProjectService({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerEntityFgdService } = require('./entity-fgd-service');
 registerEntityFgdService({ ipcMain: electron.ipcMain, app: electron.app });
 
+const { registerLargeMapService } = require('./large-map-service');
+registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
+
+const { registerProjectNameService } = require('./project-name-service');
+registerProjectNameService({ ipcMain: electron.ipcMain, app: electron.app });
+
 require('./main');
