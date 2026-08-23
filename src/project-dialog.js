@@ -199,4 +199,6 @@ async function ensureViewportBundle() {
   await safeLoadPass('bell1.js', 'ephBell1');
   await safeLoadPass('collab-ui.js', 'ephCollabUi');
   await safeLoadPass('save-guard-v10.js', 'ephSaveGuardV10');
+  await safeLoadPass('vertex-paint-fix-v14.js', 'ephVertexPaintFixV14');
+  await safeLoadPass('workspace-v14.js', 'ephWorkspaceV14');
 })();
