@@ -18,6 +18,12 @@
     catch { try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
   };
 
+  const report = (message, kind = 'info', data = null) => {
+    const suffix = data ? ` ${JSON.stringify(data)}` : '';
+    try { console[kind === 'error' ? 'error' : kind === 'warning' ? 'warn' : 'info'](`[Negative Brush] ${message}`, data || ''); } catch {}
+    try { if (typeof log === 'function') log(`[Negative Brush] ${message}${suffix}`, kind); } catch {}
+  };
+
   class Vertex {
     constructor(pos) { this.pos = pos; }
     clone() { return new Vertex(this.pos.clone()); }
@@ -167,12 +173,16 @@
     const THREE = window.EPH_THREE || window.THREE;
     const position = new THREE.Vector3(...(object.position || [0, 0, 0]).map(Number));
     const rotation = object.rotation || [0, 0, 0];
-    const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-      (Number(rotation[0]) || 0) * RAD,
-      (Number(rotation[1]) || 0) * RAD,
-      (Number(rotation[2]) || 0) * RAD,
-      'XYZ'
-    ));
+    let quaternion = window.EPH_COORDINATES?.qAngleToQuaternion?.(rotation) || null;
+    if (!quaternion) {
+      const pitch = (Number(rotation[0]) || 0) * RAD;
+      const yaw = (Number(rotation[1]) || 0) * RAD;
+      const roll = (Number(rotation[2]) || 0) * RAD;
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), yaw);
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), pitch);
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll);
+      quaternion = qYaw.multiply(qPitch).multiply(qRoll).normalize();
+    }
     const scale = new THREE.Vector3(...(object.scale || [1, 1, 1]).map(value => Number.isFinite(Number(value)) ? Number(value) : 1));
     return new THREE.Matrix4().compose(position, quaternion, scale);
   }
@@ -215,7 +225,6 @@
   }
 
   function applyPolygons(target, polygons) {
-    const THREE = window.EPH_THREE || window.THREE;
     const inverse = matrixFor(target).invert();
     const vertices = [];
     const faces = [];
@@ -257,8 +266,13 @@
   }
 
   function selectedParts() {
-    const ids = window.EPH_MULTI_SELECTION?.ids?.() || S?.multiSelectedIds || S?.viewport?.multiSelectedIds || [S?.selectedId];
-    return [...new Set(ids || [])].map(id => S.objects.find(object => object.id === id)).filter(object => object?.type === 'part');
+    const ids = new Set();
+    const add = list => { for (const id of Array.isArray(list) ? list : []) if (id) ids.add(id); };
+    try { add(window.EPH_MULTI_SELECTION?.ids?.()); } catch {}
+    add(S?.multiSelectedIds);
+    add(S?.viewport?.multiSelectedIds);
+    if (S?.selectedId) ids.add(S.selectedId);
+    return [...ids].map(id => S.objects.find(object => object.id === id)).filter(object => object?.type === 'part');
   }
 
   function removeObject(object) {
@@ -272,15 +286,32 @@
     const parts = selectedParts();
     const negatives = parts.filter(part => part.ephNegative);
     const normals = parts.filter(part => !part.ephNegative);
+    report('Carve requested', 'info', {
+      selected: parts.map(part => part.name || part.id),
+      negatives: negatives.map(part => part.name || part.id),
+      normals: normals.map(part => part.name || part.id),
+    });
     if (negatives.length !== 1 || !normals.length) {
-      toast?.('Select one Negative Part and at least one normal Part.');
+      const reason = negatives.length !== 1
+        ? `Carve needs exactly 1 Negative Part; ${negatives.length} selected.`
+        : 'Carve needs at least 1 normal Part selected with the Negative Part.';
+      report(reason, 'warning');
+      toast?.(reason);
       return false;
     }
     const negative = negatives[0];
     const cutMaterial = normals[0]?.faceMaterials?.[0] || 'ERROR';
     const cutterPolygons = objectPolygons(negative, cutMaterial);
-    if (!cutterPolygons.length) return toast?.('The Negative Part has no valid closed geometry.'), false;
-    if (cutterPolygons.length > 5000) return toast?.('The Negative Part is too complex to carve safely.'), false;
+    if (!cutterPolygons.length) {
+      report('Negative Part has no valid closed polygons.', 'warning', { name: negative.name, vertices: negative.vertices?.length, faces: negative.faces?.length });
+      toast?.('The Negative Part has no valid closed geometry.');
+      return false;
+    }
+    if (cutterPolygons.length > 5000) {
+      report('Negative Part is too complex for interactive carve.', 'warning', { polygons: cutterPolygons.length });
+      toast?.('The Negative Part is too complex to carve safely.');
+      return false;
+    }
 
     pushHistory?.();
     let changed = 0;
@@ -289,7 +320,10 @@
 
     try {
       for (const normal of normals) {
-        if (!cutterBox.intersectsBox(worldBounds(normal))) { surviving.push(normal.id); continue; }
+        const normalBox = worldBounds(normal);
+        const intersects = cutterBox.intersectsBox(normalBox);
+        report(`Testing ${normal.name || normal.id}`, 'info', { intersects });
+        if (!intersects) { surviving.push(normal.id); continue; }
         const sourcePolygons = objectPolygons(normal);
         if (!sourcePolygons.length) { surviving.push(normal.id); continue; }
         if (sourcePolygons.length > 12000) throw new Error(`${normal.name || 'Part'} is too complex for interactive CSG.`);
@@ -298,6 +332,7 @@
           copy.shared = { material: normal.faceMaterials?.[0] || 'ERROR' };
           return copy;
         }));
+        report(`CSG result for ${normal.name || normal.id}`, 'info', { inputPolygons: sourcePolygons.length, resultPolygons: result.length });
 
         if (!result.length) {
           removeObject(normal);
@@ -312,6 +347,7 @@
 
       if (!changed) {
         S.undo?.pop?.();
+        report('Carve did not intersect any selected normal Part.', 'warning');
         toast?.('The Negative Part is not touching the selected normal Part.');
         return false;
       }
@@ -326,11 +362,12 @@
       S.viewport?.setObjects?.(S.objects, primary);
       renderAll?.();
       markDirty?.(`Carved ${negative.name || 'Negative Part'} from ${changed} Part${changed === 1 ? '' : 's'}`);
+      report('Carve completed', 'info', { cutter: negative.name || negative.id, changed });
       toast?.(`Carved hole in ${changed} Part${changed === 1 ? '' : 's'}.`);
       return true;
     } catch (error) {
       S.undo?.pop?.();
-      console.error('[Negative Brush V22] CSG failed', error);
+      report(`CSG failed: ${error?.message || error}`, 'error', { stack: error?.stack || '' });
       toast?.(error?.message || 'Could not carve that geometry.');
       return false;
     }
@@ -342,6 +379,7 @@
     object.ephNegative = !object.ephNegative;
     applyNegativeVisual(object);
     markDirty?.(`${object.ephNegative ? 'Made' : 'Cleared'} Negative Part ${object.name || ''}`.trim());
+    report(`${object.ephNegative ? 'Enabled' : 'Disabled'} Negative Part`, 'info', { name: object.name || object.id });
     injectUi();
     refreshTreeStyles();
   }
@@ -359,7 +397,7 @@
         const styled = originals.map(material => {
           const copy = material?.clone?.() || material;
           if (copy?.color?.set) copy.color.set(0xff4b55);
-          if (copy) { copy.transparent = true; copy.opacity = 0.34; copy.depthWrite = false; copy.needsUpdate = true; }
+          if (copy) { copy.transparent = true; copy.opacity = 0.40; copy.depthWrite = false; copy.needsUpdate = true; }
           return copy;
         });
         child.material = Array.isArray(child.material) ? styled : styled[0];
@@ -400,15 +438,16 @@
     const parts = selectedParts();
     const negativeCount = parts.filter(part => part.ephNegative).length;
     const normalCount = parts.length - negativeCount;
+    const ready = negativeCount === 1 && normalCount >= 1;
     section.innerHTML = `
       <div class="property-section-title">Boolean / CSG</div>
       <div class="eph-negative-actions">
-        <button id="ephNegativeToggle" class="mini-button wide" type="button">Negative Part: ${object.ephNegative ? 'ON' : 'OFF'}</button>
-        <button id="ephNegativeCarve" class="mini-button wide" type="button" ${negativeCount === 1 && normalCount >= 1 ? '' : 'disabled'}>Carve Selected</button>
+        <button id="ephNegativeToggle" class="mini-button wide ${object.ephNegative ? 'on' : ''}" type="button">Negative Part: ${object.ephNegative ? 'ON' : 'OFF'}</button>
+        <button id="ephNegativeCarve" class="mini-button wide ${ready ? 'eph-csg-ready' : ''}" type="button">Carve Selected</button>
       </div>
-      <div class="selection-info">Select one negative Part and one or more normal Parts. Carving removes the negative Part and subtracts its touching volume.</div>`;
+      <div class="selection-info">Selected: ${parts.length} Part${parts.length === 1 ? '' : 's'} • ${negativeCount} negative • ${normalCount} normal<br>${ready ? 'Ready — click Carve Selected.' : 'Select exactly one negative Part and one or more normal Parts with Ctrl/Shift.'}</div>`;
     section.querySelector('#ephNegativeToggle').onclick = () => toggleNegative(object);
-    section.querySelector('#ephNegativeCarve').onclick = carveSelected;
+    section.querySelector('#ephNegativeCarve').onclick = () => window.EPH_NEGATIVE_BRUSH?.carve?.();
   }
 
   function installExtras() {
@@ -477,6 +516,8 @@
     style.textContent = `
       .eph-negative-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
       .eph-negative-actions button:disabled{opacity:.38;cursor:default}
+      .eph-negative-actions #ephNegativeToggle.on{border-color:#b34b52;background:#5a2025;color:#ffd5d7}
+      .eph-negative-actions #ephNegativeCarve.eph-csg-ready{border-color:#4f8e62;background:#173822;color:#d8ffe3}
       .tree-row.eph-negative-part-row .tree-name{color:#ff8b91}
       .tree-row.eph-negative-part-row .tree-icon{filter:sepia(1) saturate(5) hue-rotate(315deg)}
     `;
@@ -513,6 +554,7 @@
     carve: carveSelected,
     toggle: toggleNegative,
     refresh: () => { refreshNegativeVisuals(); refreshTreeStyles(); injectUi(); },
+    selectedParts,
   };
 
   install();
@@ -520,7 +562,8 @@
     install();
     refreshNegativeVisuals();
     refreshTreeStyles();
-  }, 450);
+    injectUi();
+  }, 300);
   setTimeout(() => clearInterval(timer), 30000);
   window.addEventListener('eph3d-ready', installViewport);
 })();
