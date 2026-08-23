@@ -1,17 +1,19 @@
 {
   "byanca": true,
   "name": "easypeasyhammer",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "EasyPeasyHammer collaborative CS2 map editor",
   "main": "launcher.js",
   "author": "Memphis-Cat",
   "license": "UNLICENSED",
   "scripts": {
+    "test:vmap": "node scripts/vmap-self-test.js",
     "bundle:renderer": "node bundle-renderer.js",
-    "start": "node bundle-renderer.js && electron .",
-    "dev": "node bundle-renderer.js && electron .",
+    "start": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
+    "dev": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
+    "prebuild": "node scripts/vmap-self-test.js",
     "build": "node bundle-renderer.js && electron-builder --win portable",
-    "build:portable": "node bundle-renderer.js && electron-builder --win portable"
+    "build:portable": "node scripts/vmap-self-test.js && node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
     "ws": "8.18.3"
@@ -37,6 +39,8 @@
       "collab-service.js",
       "collab-network.js",
       "attachment-service.js",
+      "vmap-text-preflight.js",
+      "vmap-write-guard.js",
       "src/**/*",
       "assets/**/*",
       "node_modules/ws/**/*",
