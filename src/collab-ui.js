@@ -41,8 +41,13 @@
       renderCollaborators();
     };
     host.querySelector('#copyInvite')?.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(state.inviteCode || ''); toast('Invite code copied'); }
-      catch { toast('Could not copy invite code'); }
+      const text = state.inviteCode || '';
+      try {
+        const result = await api.copyText?.(text);
+        if (result?.ok) { toast('Invite code copied'); return; }
+        await navigator.clipboard.writeText(text);
+        toast('Invite code copied');
+      } catch { toast('Could not copy invite code'); }
     });
     host.querySelector('#openChat')?.addEventListener('click', async () => {
       const result = await api.openCollaboratorChat?.();
