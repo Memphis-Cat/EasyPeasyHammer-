@@ -225,13 +225,21 @@
     if (!file?.type?.startsWith('image/')) return false;
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const result = await api.collabStageImage?.({
+      const staged = await api.collabStageImage?.({
         name: file.name || `pasted-image-${Date.now()}`,
         mime: file.type,
         bytes,
       });
+      if (!staged?.ok) {
+        showStatus(staged?.error || 'Could not paste image.');
+        return true;
+      }
+      // The main-process bridge queues the temporary clipboard image for the
+      // existing collaboration picker, so the proven file-transfer/token path
+      // is reused without exposing filesystem paths to the sandboxed renderer.
+      const result = await api.collabPickFile?.();
       if (!result?.ok) {
-        showStatus(result?.error || 'Could not paste image.');
+        showStatus(result?.error || 'Could not prepare pasted image.');
         return true;
       }
       setDraft(result);
