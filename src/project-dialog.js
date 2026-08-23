@@ -176,6 +176,7 @@ async function ensureViewportBundle() {
   await safeLoadPass('default-part.js', 'ephDefaultPart');
   await safeLoadPass('hammer-fidelity-ui.js', 'ephHammerFidelityUi');
   await safeLoadPass('advanced-ui.js', 'ephAdvancedUi');
+  await safeLoadPass('bundled/editor-tools-v6.bundle.js', 'ephEditorToolsV6Bundle');
   await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
   await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
   await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
