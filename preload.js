@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   },
   openLargeTextMap: (vmapPath) => ipcRenderer.invoke('large-map:open-text', vmapPath),
   largeMapGetBlocks: (token, entryIds) => ipcRenderer.invoke('large-map:get-blocks', token, entryIds),
+  largeMapSpatialIndex: (token) => ipcRenderer.invoke('large-map:spatial-index', token),
   largeMapRelease: (token) => ipcRenderer.invoke('large-map:release', token),
   largeMapSave: (token, targetPath, patches, newBlocks) => ipcRenderer.invoke('large-map:save', token, targetPath, patches, newBlocks),
   saveVmap: (vmapPath, text, backup = true) => ipcRenderer.invoke('project:save-vmap', vmapPath, text, backup),
