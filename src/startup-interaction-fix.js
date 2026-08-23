@@ -94,6 +94,7 @@
   loadPass('multi-select-v22.js', '__ephMultiSelectV22');
   loadPass('local-history-v22.js', '__ephLocalHistoryV22');
   loadPass('negative-brush-v22.js', '__ephNegativeBrushV22');
+  loadPass('negative-brush-safety-v22.js', '__ephNegativeBrushSafetyV22');
 
   repair();
   requestAnimationFrame(repair);
