@@ -1,0 +1,30 @@
+/* byanca */
+.eph-diagnostics-dialog {
+  width: min(900px, calc(100vw - 48px));
+  height: min(680px, calc(100vh - 70px));
+  padding: 0;
+  border: 1px solid #2b2b2b;
+  border-radius: 6px;
+  background: #000;
+  color: #fff;
+  box-shadow: 0 24px 80px rgba(0,0,0,.85);
+}
+.eph-diagnostics-dialog::backdrop { background: rgba(0,0,0,.7); }
+.eph-diagnostics-shell { height: 100%; display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; background:#000; }
+.eph-diagnostics-header { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #222; }
+.eph-diagnostics-header strong { display:block; color:#fff; font-size:15px; }
+.eph-diagnostics-header span { display:block; margin-top:3px; color:#aaa; font-size:10px; }
+#ephDiagnosticsClose { width:28px; height:28px; padding:0; border:0; background:transparent; color:#aaa; font-size:20px; cursor:pointer; }
+#ephDiagnosticsClose:hover { background:#1b1b1b; color:#fff; }
+.eph-diagnostics-summary { white-space:pre-wrap; padding:9px 16px; border-bottom:1px solid #1d1d1d; color:#aaa; font:10px/1.45 Consolas, monospace; }
+.eph-diagnostics-list { overflow:auto; padding:10px 14px; background:#000; font:11px/1.48 Consolas, monospace; }
+.eph-log-row { white-space:pre-wrap; overflow-wrap:anywhere; padding:1px 0; }
+.eph-log-row.normal { color:#fff; }
+.eph-log-row.warning { color:#ffd84d; }
+.eph-log-row.error { color:#ff5a5a; }
+.eph-log-empty { color:#888; }
+.eph-diagnostics-actions { display:flex; justify-content:flex-end; gap:8px; padding:11px 14px; border-top:1px solid #222; background:#050505; }
+.eph-diagnostics-actions button { min-height:30px; padding:0 11px; border:1px solid #333; border-radius:4px; background:#080808; color:#fff; cursor:pointer; }
+.eph-diagnostics-actions button:hover { background:#151515; border-color:#555; }
+.eph-diagnostics-actions button.primary { border-color:#777; background:#fff; color:#000; }
+.eph-diagnostics-actions button.primary:hover { background:#ddd; }
