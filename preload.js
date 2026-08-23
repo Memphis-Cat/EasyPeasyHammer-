@@ -5,7 +5,7 @@ async function loadVmap(vmapPath) {
   const inspection = await ipcRenderer.invoke('project:inspect-vmap', vmapPath);
   if (inspection?.ok && inspection.encoding === 'binary') {
     const decoded = await ipcRenderer.invoke('project:decode-vmap', vmapPath);
-    if (!decoded?.ok) return { ok: false, error: decoded?.error || 'This binary Hammer VMAP could not be decoded.' };
+    if (!decoded?.ok) return { ok: false, ...decoded, error: decoded?.error || 'This binary Hammer VMAP could not be decoded.' };
     return { ...decoded, ok: true, sourceEncoding: 'binary' };
   }
 
@@ -28,12 +28,24 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   saveProfile: (username) => ipcRenderer.invoke('profile:set', username),
   openVmap: () => ipcRenderer.invoke('project:open-vmap'),
   createProject: (name) => ipcRenderer.invoke('project:create', name),
+  checkProjectName: (name) => ipcRenderer.invoke('project:name-available', name),
   listRecentProjects: (limit = 24) => ipcRenderer.invoke('project:list-recents', limit),
   openRecentProject: (vmapPath) => ipcRenderer.invoke('project:open-recent', vmapPath),
   deleteRecentProject: (vmapPath) => ipcRenderer.invoke('project:delete-recent', { vmapPath }),
   inspectVmap: (vmapPath) => ipcRenderer.invoke('project:inspect-vmap', vmapPath),
   loadVmap,
   decodeVmap: (vmapPath) => ipcRenderer.invoke('project:decode-vmap', vmapPath),
+  cancelVmapLoad: async () => {
+    await Promise.allSettled([
+      ipcRenderer.invoke('project:cancel-decode'),
+      ipcRenderer.invoke('large-map:cancel-open')
+    ]);
+    return { ok: true };
+  },
+  openLargeTextMap: (vmapPath) => ipcRenderer.invoke('large-map:open-text', vmapPath),
+  largeMapGetBlocks: (token, entryIds) => ipcRenderer.invoke('large-map:get-blocks', token, entryIds),
+  largeMapRelease: (token) => ipcRenderer.invoke('large-map:release', token),
+  largeMapSave: (token, targetPath, patches, newBlocks) => ipcRenderer.invoke('large-map:save', token, targetPath, patches, newBlocks),
   saveVmap: (vmapPath, text, backup = true) => ipcRenderer.invoke('project:save-vmap', vmapPath, text, backup),
   continueLast: () => ipcRenderer.invoke('project:continue-last'),
   autosave: (snapshot) => ipcRenderer.invoke('project:autosave', snapshot),
@@ -68,6 +80,11 @@ contextBridge.exposeInMainWorld('easyPeasyHammer', {
   collabShowFile: (localPath, expectedSize = null) => ipcRenderer.invoke('collab:show-file-v2', localPath, expectedSize),
   collabListShared: () => ipcRenderer.invoke('collab:list-shared'),
   collabForgetShared: (sessionId) => ipcRenderer.invoke('collab:forget-shared', sessionId),
+  onVmapLoadProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('vmap:load-progress', listener);
+    return () => ipcRenderer.removeListener('vmap:load-progress', listener);
+  },
   onCollaborationEvent: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('collab:event', listener);
