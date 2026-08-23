@@ -180,6 +180,7 @@ async function ensureViewportBundle() {
   await safeLoadPass('phase4-project-sync.js', 'ephPhase4ProjectSync');
   await safeLoadPass('phase4-copy.js', 'ephPhase4Copy');
   await safeLoadPass('collab-runtime.js', 'ephCollabRuntime');
+  await safeLoadPass('collab-camera-v6.js', 'ephCollabCameraV6');
   await safeLoadPass('bundled/collab-visuals.bundle.js', 'ephCollabVisualsBundle');
   await safeLoadPass('bell1.js', 'ephBell1');
   await safeLoadPass('collab-ui.js', 'ephCollabUi');
