@@ -4,7 +4,6 @@
   if (window.__ephCollabLocalViewV23) return;
   window.__ephCollabLocalViewV23 = true;
 
-  let wrappedLoadProject = null;
   let wrappedMakeSnapshot = null;
 
   function clone(value) {
@@ -13,19 +12,26 @@
     catch { try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
   }
 
+  function chainHas(fn, marker) {
+    const seen = new Set();
+    let current = fn;
+    for (let i = 0; current && typeof current === 'function' && i < 32 && !seen.has(current); i++) {
+      if (current[marker]) return true;
+      seen.add(current);
+      current = current.__ephPrevious;
+    }
+    return false;
+  }
+
   function sharedOnly(snapshot) {
     if (!snapshot || typeof snapshot !== 'object') return snapshot;
-    const out = {
+    return {
       phase: 4,
       vmapText: snapshot.vmapText,
       objectExtras: clone(snapshot.objectExtras || null),
       ephFolders: clone(snapshot.ephFolders || []),
       ephParents: clone(snapshot.ephParents || {}),
     };
-    // Keep only data that describes the actual shared map/document. Never
-    // include a collaborator's personal camera, tool, selection, panels,
-    // wireframe/shading, grid, snapping, or viewport mode.
-    return out;
   }
 
   function isCollabSnapshot(ui) {
@@ -34,7 +40,7 @@
 
   function installLoadProjectGuard() {
     if (typeof loadProject !== 'function') return false;
-    if (loadProject === wrappedLoadProject || loadProject.__ephCollabLocalViewV23) return true;
+    if (chainHas(loadProject, '__ephCollabLocalViewV23')) return true;
     const raw = loadProject;
     const wrapped = async function(project, ui) {
       return raw(project, isCollabSnapshot(ui) ? sharedOnly(ui) : ui);
@@ -43,18 +49,18 @@
     wrapped.__ephPrevious = raw;
     loadProject = wrapped;
     window.loadProject = wrapped;
-    wrappedLoadProject = wrapped;
     return true;
   }
 
   function installPublicSnapshotGuard() {
     const collab = window.EPH_COLLAB;
     if (!collab?.makeSnapshot) return false;
-    if (collab.makeSnapshot === wrappedMakeSnapshot || collab.makeSnapshot.__ephCollabLocalViewV23) return true;
+    if (chainHas(collab.makeSnapshot, '__ephCollabLocalViewV23')) return true;
     const raw = collab.makeSnapshot.bind(collab);
+    const previous = collab.makeSnapshot;
     const wrapped = function() { return sharedOnly(raw()); };
     wrapped.__ephCollabLocalViewV23 = true;
-    wrapped.__ephPrevious = raw;
+    wrapped.__ephPrevious = previous;
     collab.makeSnapshot = wrapped;
     wrappedMakeSnapshot = wrapped;
     return true;
