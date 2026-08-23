@@ -11,18 +11,20 @@
   if (!api || !VMAP || !THREE) return;
 
   const CELL_SIZE = 512;
-  const BATCH = 8;
-  const REFRESH_MS = 160;
-  const UNLOAD_MS = 1800;
-  const MAX_RESIDENT = 320;
+  const BATCH = 24;
+  const REFRESH_MS = 90;
   const TREE_DELAY = 5000;
+  const INITIAL_CONTAINER_TARGET = 1400;
+  const MODEL_WORKERS = 6;
+  const MATERIAL_WORKERS = 12;
 
   const st = {
-    active: false, token: null, entries: [], byId: new Map(), byDmx: new Map(),
-    loaded: new Map(), pending: new Set(), bounds: new Map(), hidden: new Map(),
+    active: false, preloading: false, token: null, entries: [], byId: new Map(), byDmx: new Map(),
+    loaded: new Map(), loadedContainers: new Set(), pending: new Set(), bounds: new Map(),
     objectById: new Map(), shownProps: new Set(), cells: [], cellMap: new Map(), sphereData: new Map(),
     refreshTimer: null, treeTimer: null, pumping: false, rawSet: null, rawSave: null,
     rawUi: null, oldPixelRatio: null, refreshCount: 0, lastRefreshMs: 0,
+    preloadTarget: 0, preloadDone: 0, modelWarmTarget: 0, modelWarmDone: 0,
     frustum: new THREE.Frustum(), projectionMatrix: new THREE.Matrix4(),
   };
 
@@ -32,8 +34,13 @@
 
   function report(level, message, meta = null) {
     const method = level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info';
-    console[method](`[Large Stream V21] ${message}`, meta || '');
-    api?.appLog?.(level, 'large-stream-v21', message, meta).catch?.(() => {});
+    console[method](`[Large Stream V29] ${message}`, meta || '');
+    api?.appLog?.(level, 'large-stream-v29', message, meta).catch?.(() => {});
+  }
+
+  function loadingStage(text) {
+    const title = document.getElementById('ephComplexVmapLoadingTitle');
+    if (title && !document.getElementById('ephComplexVmapLoading')?.hidden) title.textContent = text;
   }
 
   function proxy(entry) {
@@ -81,18 +88,12 @@
     const scale = vec(entry.scale, [1,1,1]);
     const radius = Math.max(8, Number(entry.approxRadius) || (entry.type === 'mesh' ? 512 : 96)) * Math.max(1, ...scale.map(value => Math.abs(value)));
     const c = worldPosition(entry);
-    const center = new THREE.Vector3(c[0], c[1], c[2]);
-    cached = { c, r: radius, sphere: new THREE.Sphere(center, radius) };
+    cached = { c, r: radius, sphere: new THREE.Sphere(new THREE.Vector3(c[0], c[1], c[2]), radius) };
     st.sphereData.set(entry.entryId, cached);
     return cached;
   }
 
-  function sphere(entry) {
-    const data = entrySphereData(entry);
-    if (data.sphere) return data.sphere;
-    data.sphere = new THREE.Sphere(new THREE.Vector3(data.c[0], data.c[1], data.c[2]), data.r);
-    return data.sphere;
-  }
+  function sphere(entry) { return entrySphereData(entry).sphere; }
 
   function distance(entry) {
     const camera = S.viewport?.camera; if (!camera) return Infinity;
@@ -128,7 +129,7 @@
       }
     }
     for (const cell of st.cells) cell.box = new THREE.Box3(new THREE.Vector3(...cell.min), new THREE.Vector3(...cell.max));
-    report('normal', `Built ${st.cells.length.toLocaleString()} spatial cells for ${st.entries.length.toLocaleString()} streamed objects.`, { cellSize: CELL_SIZE });
+    report('normal', `Built ${st.cells.length.toLocaleString()} spatial cells for ${st.entries.length.toLocaleString()} indexed objects.`, { cellSize: CELL_SIZE });
   }
 
   function addElement(element) {
@@ -150,8 +151,6 @@
   }
 
   function cacheBounds(object, root) {
-    // Real mesh bounds already come from the V19 spatial index. Avoid running
-    // Box3.setFromObject for every streamed root during camera movement.
     if (!object?.ephLargeStreamed || !root) return;
     const entry = st.byId.get(object.ephLargeEntryId);
     if (!entry) return;
@@ -165,32 +164,13 @@
     if (st.active && object.type === 'entity' && object.id !== S.selectedId) return;
     const root = viewport.createObjectRoot(object); if (!root) return;
     viewport.objectGroup.add(root); viewport.objectRoots.set(object.id, root);
-    if (object.ephLargeProxy && object.type === 'prop') st.shownProps.add(object.id);
+    if (object.type === 'prop') st.shownProps.add(object.id);
     cacheBounds(object, root);
     if (S.selectedId === object.id) viewport.select(object.id, false);
   }
 
-  function hideRoot(id) {
-    const viewport = S.viewport, root = viewport?.objectRoots?.get(id);
-    if (!root || id === S.selectedId) return;
-    viewport.objectGroup.remove(root); viewport.disposeObject(root); viewport.objectRoots.delete(id);
-    st.shownProps.delete(id);
-  }
-
-  function evict(entry) {
-    const id = st.loaded.get(entry.entryId), object = id && st.objectById.get(id);
-    if (!id || id === S.selectedId || object?.ephLargeDirty) return;
-    hideRoot(id);
-    try { VMAP.removeObject(S.doc, object); } catch {}
-    const index = S.objects.findIndex(item => item.id === id);
-    if (index >= 0) S.objects.splice(index, 1);
-    st.objectById.delete(id);
-    st.bounds.delete(id);
-    S.viewport.objects = S.objects;
-    st.loaded.delete(entry.entryId);
-  }
-
   function bind(entry, objects) {
+    st.loadedContainers.add(entry.entryId);
     for (const object of objects) {
       const own = st.byDmx.get(String(object.dmxId)) || entry;
       object.ephLargeEntryId = own.entryId;
@@ -216,7 +196,7 @@
   }
 
   function scheduleTree() {
-    if (st.treeTimer) return;
+    if (st.treeTimer || st.preloading) return;
     st.treeTimer = setTimeout(() => {
       st.treeTimer = null;
       if (!st.active) return;
@@ -224,31 +204,42 @@
     }, TREE_DELAY);
   }
 
-  async function loadEntries(entries) {
-    if (!st.active || st.pumping) return;
+  function nextContainers(entries, limit = BATCH) {
     const containers = [], seen = new Set();
-    for (const entry of entries) {
-      const container = containerEntry(entry);
-      if (!container || seen.has(container.entryId) || st.pending.has(container.entryId) || st.loaded.has(container.entryId)) continue;
+    for (const source of entries || []) {
+      const container = containerEntry(source);
+      if (!container || seen.has(container.entryId) || st.loadedContainers.has(container.entryId) || st.pending.has(container.entryId)) continue;
       seen.add(container.entryId); containers.push(container);
-      if (containers.length >= BATCH) break;
+      if (containers.length >= limit) break;
     }
-    if (!containers.length) return;
+    return containers;
+  }
+
+  async function loadEntries(entries, options = {}) {
+    if (!st.active || st.pumping) return 0;
+    const containers = nextContainers(entries, Number(options.limit) || BATCH);
+    if (!containers.length) return 0;
     st.pumping = true; containers.forEach(item => st.pending.add(item.entryId));
+    let added = 0;
     try {
       const result = await api.largeMapGetBlocks?.(st.token, containers.map(item => item.entryId));
-      if (!st.active || !result?.ok) return;
+      if (!st.active || !result?.ok) return 0;
       for (const block of result.blocks || []) {
         const entry = st.byId.get(block.entryId); if (!entry) continue;
-        try { const parsed = parseBlock(block.text, entry); addElement(parsed.element); bind(entry, parsed.objects); }
-        catch (error) { report('error', `Large-map block ${block.entryId} failed.`, error?.stack || error?.message || String(error)); }
+        try {
+          const parsed = parseBlock(block.text, entry);
+          addElement(parsed.element); bind(entry, parsed.objects); added++;
+        } catch (error) {
+          st.loadedContainers.add(entry.entryId);
+          report('error', `Large-map block ${block.entryId} failed.`, error?.stack || error?.message || String(error));
+        }
       }
-      // Do not rebuild the 3k+ Scene DOM on every streamed batch. Only refresh
-      // it lazily when a non-world object is actually selected.
       scheduleTree();
+      return added;
     } finally {
       containers.forEach(item => st.pending.delete(item.entryId));
-      st.pumping = false; schedule();
+      st.pumping = false;
+      if (!st.preloading) schedule();
     }
   }
 
@@ -268,25 +259,108 @@
     return output;
   }
 
-  function unloadInvisible(view, now) {
-    for (const [entryId] of st.loaded) {
-      const entry = st.byId.get(entryId); if (!entry) continue;
-      const visible = view.intersectsSphere(sphere(entry));
-      if (visible) { st.hidden.delete(entryId); continue; }
-      if (!st.hidden.has(entryId)) st.hidden.set(entryId, now);
-      if (now - st.hidden.get(entryId) > UNLOAD_MS && entry.type === 'mesh') evict(entry);
+  function initialWorkingSet() {
+    const view = frustum();
+    const visible = visibleEntries(view);
+    const output = [], containers = new Set();
+    const add = entry => {
+      if (!entry || entry.visible === false) return;
+      if (entry.type === 'entity' && !entry.model) return;
+      const container = containerEntry(entry);
+      if (!container || containers.has(container.entryId)) return;
+      containers.add(container.entryId); output.push(entry);
+    };
+    visible.sort((a,b) => distance(a) - distance(b)).forEach(add);
+    if (containers.size < INITIAL_CONTAINER_TARGET) {
+      const nearest = st.entries
+        .filter(entry => entry?.visible !== false && (entry.type === 'mesh' || (entry.type === 'entity' && entry.model)))
+        .sort((a,b) => distance(a) - distance(b));
+      for (const entry of nearest) {
+        add(entry);
+        if (containers.size >= INITIAL_CONTAINER_TARGET) break;
+      }
     }
-    for (const objectId of st.shownProps) {
-      const object = st.objectById.get(objectId), entry = object && st.byId.get(object.ephLargeEntryId);
-      if (!entry || view.intersectsSphere(sphere(entry))) { st.hidden.delete(objectId); continue; }
-      if (!st.hidden.has(objectId)) st.hidden.set(objectId, now);
-      if (now - st.hidden.get(objectId) > UNLOAD_MS) hideRoot(objectId);
+    return output;
+  }
+
+  async function runWorkers(items, workers, task, progress) {
+    let next = 0, done = 0;
+    async function worker() {
+      for (;;) {
+        const index = next++;
+        if (index >= items.length || !st.active) return;
+        try { await task(items[index], index); } catch {}
+        done++;
+        progress?.(done, items.length);
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(Math.max(1, workers), Math.max(1, items.length)) }, worker));
+  }
+
+  async function warmModels(entries) {
+    const viewport = S.viewport;
+    if (!viewport?.loadModel) return;
+    const initial = new Set((entries || []).map(entry => String(entry?.model || '')).filter(Boolean));
+    // Normal CS2 prop models are cheap and commonly reused throughout a map, so
+    // warm all of them. Expensive decompiler worldnode draw models are warmed for
+    // the initial working set only; once their shared caches exist, later draws
+    // become dramatically cheaper.
+    for (const entry of st.entries) {
+      const model = String(entry?.model || '');
+      if (model && !/\/worldnodes\//i.test(`/${model.replace(/\\/g,'/')}`)) initial.add(model);
+    }
+    const models = [...initial];
+    st.modelWarmTarget = models.length; st.modelWarmDone = 0;
+    if (!models.length) return;
+    loadingStage(`Loading models… 0 / ${models.length.toLocaleString()}`);
+    await runWorkers(models, MODEL_WORKERS, model => viewport.loadModel(model), (done,total) => {
+      st.modelWarmDone = done;
+      if (done === total || done % 5 === 0) loadingStage(`Loading models… ${done.toLocaleString()} / ${total.toLocaleString()}`);
+    });
+  }
+
+  async function warmMaterials(objects) {
+    const viewport = S.viewport;
+    if (!viewport?.loadMaterialTexture) return;
+    const resources = new Set();
+    for (const object of objects || []) {
+      if (object?.type !== 'part') continue;
+      for (const resource of object.faceMaterials || []) {
+        const value = String(resource || '');
+        if (value && value !== 'ERROR') resources.add(value);
+      }
+    }
+    const materials = [...resources];
+    if (!materials.length) return;
+    loadingStage(`Loading textures… 0 / ${materials.length.toLocaleString()}`);
+    await runWorkers(materials, MATERIAL_WORKERS, resource => viewport.loadMaterialTexture(resource), (done,total) => {
+      if (done === total || done % 10 === 0) loadingStage(`Loading textures… ${done.toLocaleString()} / ${total.toLocaleString()}`);
+    });
+  }
+
+  async function preloadInitial(entries) {
+    const containers = new Set((entries || []).map(entry => containerEntry(entry)?.entryId).filter(Boolean));
+    st.preloadTarget = containers.size; st.preloadDone = 0;
+    if (!containers.size) return;
+    const beforeIds = new Set(st.objectById.keys());
+    let guard = 0;
+    while (st.active && guard++ < 10000) {
+      const remaining = nextContainers(entries, BATCH);
+      if (!remaining.length) break;
+      loadingStage(`Loading map geometry… ${st.preloadDone.toLocaleString()} / ${st.preloadTarget.toLocaleString()}`);
+      const added = await loadEntries(entries, { limit: BATCH });
+      st.preloadDone = [...containers].filter(id => st.loadedContainers.has(id)).length;
+      if (!added && !st.pending.size) break;
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    const newObjects = [...st.objectById.values()].filter(object => !beforeIds.has(object.id));
+    await warmMaterials(newObjects);
+    loadingStage(`Finishing map… ${st.preloadDone.toLocaleString()} regions ready`);
   }
 
   function refresh() {
-    if (!st.active || !S.viewport?.camera) return;
-    const started = performance.now(), view = frustum(), now = performance.now();
+    if (!st.active || st.preloading || !S.viewport?.camera) return;
+    const started = performance.now(), view = frustum();
     const entries = visibleEntries(view), meshes = [], props = [];
 
     for (const entry of entries) {
@@ -296,10 +370,8 @@
         const object = loadedId ? st.objectById.get(loadedId) : st.objectById.get(proxyId);
         if (object?.type === 'prop' && !S.viewport.objectRoots.has(object.id)) props.push({ entry, object });
         else if (object?.type === 'entity' && object.id === S.selectedId && !S.viewport.objectRoots.has(object.id)) showRoot(object);
-      } else if (!loadedId && !st.pending.has(containerEntry(entry)?.entryId || entry.entryId)) meshes.push(entry);
+      } else if (!loadedId && !st.loadedContainers.has(containerEntry(entry)?.entryId) && !st.pending.has(containerEntry(entry)?.entryId || entry.entryId)) meshes.push(entry);
     }
-
-    unloadInvisible(view, now);
 
     const selected = st.objectById.get(S.selectedId);
     if (selected?.ephLargeProxy) {
@@ -307,35 +379,26 @@
       if (entry) loadEntries([entry]);
     }
 
-    // Frustum + real mesh bounds are cheap and stable. The old code fired up to
-    // 28 recursive scene raycasts every refresh for occlusion; on a streamed
-    // Valve map that cost more CPU than the geometry it prevented from loading.
     const candidates = [
       ...meshes.map(entry => ({ kind: 'mesh', entry, d: distance(entry) })),
       ...props.map(item => ({ kind: 'prop', ...item, d: distance(item.entry) })),
     ].sort((a,b) => a.d - b.d);
-    const toMesh = [];
+    const toLoad = [];
     let count = 0;
     for (const candidate of candidates) {
       if (count >= BATCH) break;
-      if (candidate.kind === 'prop') showRoot(candidate.object); else toMesh.push(candidate.entry);
+      if (candidate.kind === 'prop') showRoot(candidate.object); else toLoad.push(candidate.entry);
       count++;
     }
-    if (toMesh.length) loadEntries(toMesh);
+    if (toLoad.length) loadEntries(toLoad);
 
-    const resident = [];
-    for (const entryId of st.loaded.keys()) {
-      const entry = st.byId.get(entryId);
-      if (entry?.type === 'mesh') resident.push(entry);
-    }
-    if (resident.length > MAX_RESIDENT) {
-      resident.sort((a,b) => distance(b) - distance(a));
-      resident.slice(MAX_RESIDENT).forEach(evict);
-    }
-
+    // V29 intentionally does NOT evict loaded geometry when it leaves the
+    // camera frustum. Three.js already frustum-culls draw calls. Keeping the
+    // object/root resident prevents the destructive unload -> parse -> model
+    // reload cycle that caused visible popping whenever the camera turned.
     st.refreshCount++;
     st.lastRefreshMs = performance.now() - started;
-    if (st.refreshCount <= 3 || st.refreshCount % 200 === 0) {
+    if (st.refreshCount <= 3 || st.refreshCount % 300 === 0) {
       report(st.lastRefreshMs > 8 ? 'warning' : 'normal', `Visibility refresh checked ${st.cells.length} cells / ${entries.length} in-view entries in ${st.lastRefreshMs.toFixed(1)} ms.`, {
         totalEntries: st.entries.length, resident: st.loaded.size, pending: st.pending.size,
       });
@@ -343,7 +406,7 @@
   }
 
   function schedule() {
-    if (!st.active || st.refreshTimer) return;
+    if (!st.active || st.preloading || st.refreshTimer) return;
     st.refreshTimer = setTimeout(() => { st.refreshTimer = null; refresh(); }, REFRESH_MS);
   }
 
@@ -466,39 +529,62 @@
   }
 
   async function open(rawLoad, project, decoded, ui) {
-    st.active = false;
+    st.active = false; st.preloading = false;
     const tiny = VMAP.createEmptyDocument();
     const ok = await rawLoad({ ...project, ephSkipModelWarmup: true }, { ...(ui || {}), vmapText: VMAP.stringify(tiny) });
     if (!ok) return false;
-    st.active = true; st.token = decoded.largeMapToken;
+    st.active = true; st.preloading = true; st.token = decoded.largeMapToken;
     st.entries = Array.isArray(decoded.largeMapEntries) ? decoded.largeMapEntries : [];
     st.byId = new Map(st.entries.map(item => [item.entryId, item]));
     st.byDmx = new Map(st.entries.filter(item => item.dmxId).map(item => [String(item.dmxId), item]));
-    st.loaded.clear(); st.pending.clear(); st.bounds.clear(); st.hidden.clear(); st.shownProps.clear(); st.sphereData.clear();
+    st.loaded.clear(); st.loadedContainers.clear(); st.pending.clear(); st.bounds.clear(); st.shownProps.clear(); st.sphereData.clear();
     S.project = { ...project, ephLargeMap: true, ephLargeMapToken: st.token, ephLargeMapStats: { meshCount: decoded.meshCount, entityCount: decoded.entityCount, decodedBytes: decoded.decodedBytes } };
     S.doc = tiny; S.objects = VMAP.extractObjects(tiny).map(ensureObject);
     for (const entry of st.entries) if (entry.type === 'entity') S.objects.push(proxy(entry));
     rebuildObjectIndex(); buildSpatialCells();
     S.selectedId = 'world'; S.dirty = false; installViewport(); markDirty(); installSave();
     if (S.viewport) { S.viewport.objects = S.objects; S.viewport.clearObjects(); initialCamera(); }
+
+    const working = initialWorkingSet();
+    report('normal', 'Preloading initial stable working set before editor handoff.', {
+      containers: new Set(working.map(entry => containerEntry(entry)?.entryId).filter(Boolean)).size,
+      indexed: st.entries.length,
+    });
+    try {
+      await warmModels(working);
+      await preloadInitial(working);
+    } catch (error) {
+      report('warning', 'Initial preload encountered an error; keeping successfully loaded content resident.', error?.stack || error?.message || String(error));
+    }
+
+    st.preloading = false;
     renderAll?.(); updateTitle?.(); schedule();
     await api.autosave?.({ project: S.project, uiState: window.uiSnapshot?.() || null });
-    report('normal', 'Streamed map opened with cached allocation-free visibility.', { entries: st.entries.length, cells: st.cells.length, pixelRatio: 1 });
+    report('normal', 'Large map ready. Loaded geometry is now persistent and camera movement never evicts it.', {
+      entries: st.entries.length, cells: st.cells.length, resident: st.loaded.size,
+      preloadedContainers: st.loadedContainers.size, modelsWarmed: st.modelWarmDone, pixelRatio: 1,
+    });
     return true;
   }
 
   async function close() {
     if (!st.active) return;
-    st.active = false; clearTimeout(st.refreshTimer); clearTimeout(st.treeTimer);
+    st.active = false; st.preloading = false; clearTimeout(st.refreshTimer); clearTimeout(st.treeTimer);
     try { await api.largeMapRelease?.(st.token); } catch {}
     try { if (S.viewport && st.oldPixelRatio != null) { S.viewport.renderer.setPixelRatio(st.oldPixelRatio); S.viewport.resize?.(); } } catch {}
-    st.token = null; st.entries = []; st.byId.clear(); st.byDmx.clear(); st.loaded.clear(); st.pending.clear();
-    st.bounds.clear(); st.hidden.clear(); st.objectById.clear(); st.shownProps.clear(); st.sphereData.clear(); st.cells = []; st.cellMap.clear();
+    st.token = null; st.entries = []; st.byId.clear(); st.byDmx.clear(); st.loaded.clear(); st.loadedContainers.clear(); st.pending.clear();
+    st.bounds.clear(); st.objectById.clear(); st.shownProps.clear(); st.sphereData.clear(); st.cells = []; st.cellMap.clear();
   }
 
   window.EPH_LARGE_STREAM = {
     open, close, refresh, save: saveLarge,
     active: () => st.active,
-    state: () => ({ active: st.active, token: st.token, entries: st.entries.length, loaded: st.loaded.size, pending: st.pending.size, cells: st.cells.length, refreshMs: Number(st.lastRefreshMs.toFixed(2)) }),
+    state: () => ({
+      active: st.active, preloading: st.preloading, token: st.token, entries: st.entries.length,
+      loaded: st.loaded.size, pending: st.pending.size, cells: st.cells.length,
+      preloadTarget: st.preloadTarget, preloadDone: st.preloadDone,
+      modelWarmTarget: st.modelWarmTarget, modelWarmDone: st.modelWarmDone,
+      refreshMs: Number(st.lastRefreshMs.toFixed(2)),
+    }),
   };
 })();
