@@ -9,6 +9,7 @@
   const materialResolveCache = new Map();
   const catalog = new Map();
   let catalogPromise = null;
+  let installed = false;
 
   const lower = value => String(value || '').toLowerCase();
   const clean = value => String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
@@ -61,14 +62,12 @@
     if (modelResolveCache.has(cacheKey)) return modelResolveCache.get(cacheKey);
     const promise = (async () => {
       if (!/\.mdl$/i.test(normalized)) return rawLoad(resource);
-
       const directVmdl = normalized.replace(/\.mdl$/i, '.vmdl');
       let result = await rawLoad(directVmdl);
       if (result?.scene) {
         report('normal', `Resolved legacy Hammer .mdl helper as ${directVmdl}.`, { source: normalized });
         return result;
       }
-
       const queries = modelQueries(normalized);
       const candidates = new Map();
       for (const query of queries.slice(0, 3)) {
@@ -164,30 +163,29 @@
   }
 
   function install() {
+    if (installed) return true;
     const vp = window.EPH3D || (typeof S !== 'undefined' ? S?.viewport : null);
     if (!vp?.loadModel || !vp?.loadMaterialTexture) return false;
 
-    if (!vp.loadModel.__ephEntityResolveV21) {
-      const raw = vp.loadModel.bind(vp);
-      const wrapped = function(resource) { return resolveLegacyModel(raw, resource); };
-      wrapped.__ephEntityResolveV21 = true;
-      wrapped.__ephPrevious = raw;
-      vp.loadModel = wrapped;
-      report('normal', 'Legacy Hammer entity model resolver installed.');
-    }
+    const rawModel = vp.loadModel.bind(vp);
+    const modelWrapper = function(resource) { return resolveLegacyModel(rawModel, resource); };
+    modelWrapper.__ephEntityResolveV21 = true;
+    modelWrapper.__ephPrevious = rawModel;
+    vp.loadModel = modelWrapper;
 
-    if (!vp.loadMaterialTexture.__ephEntityResolveV21) {
-      const raw = vp.loadMaterialTexture.bind(vp);
-      const wrapped = function(resource) {
-        const value = clean(resource);
-        if (/^(?:editor\/|materials\/editor\/)/i.test(value)) return resolveEditorMaterial(raw, value);
-        return raw(resource);
-      };
-      wrapped.__ephEntityResolveV21 = true;
-      wrapped.__ephPrevious = raw;
-      vp.loadMaterialTexture = wrapped;
-      report('normal', 'Hammer editor sprite path resolver installed.');
-    }
+    const rawMaterial = vp.loadMaterialTexture.bind(vp);
+    const materialWrapper = function(resource) {
+      const value = clean(resource);
+      if (/^(?:editor\/|materials\/editor\/)/i.test(value)) return resolveEditorMaterial(rawMaterial, value);
+      return rawMaterial(resource);
+    };
+    materialWrapper.__ephEntityResolveV21 = true;
+    materialWrapper.__ephPrevious = rawMaterial;
+    vp.loadMaterialTexture = materialWrapper;
+
+    installed = true;
+    report('normal', 'Legacy Hammer entity model resolver installed once.');
+    report('normal', 'Hammer editor sprite path resolver installed once.');
     return true;
   }
 
@@ -206,9 +204,12 @@
     patchPropertyInputs();
   });
 
-  install();
-  const timer = setInterval(install, 250);
-  setTimeout(() => clearInterval(timer), 20000);
-  window.addEventListener('eph3d-ready', install);
+  if (!install()) {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (install() || Date.now() - started > 5000) clearInterval(timer);
+    }, 250);
+  }
+  window.addEventListener('eph3d-ready', () => { if (!installed) install(); }, { once: true });
   window.addEventListener('eph-fgd-catalog-ready', () => { catalogPromise = null; hydrateCatalog().then(patchPropertyInputs); });
 })();
