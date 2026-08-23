@@ -1,0 +1,55 @@
+/* byanca */
+.eph-surface-toggle {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #2a2d33;
+  border-radius: 4px;
+  background: #111317;
+  color: #aeb5bf;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.eph-surface-toggle.active {
+  border-color: #6f4fb5;
+  background: #1c1727;
+  color: #d8c8ff;
+}
+
+.toolbar-row {
+  min-height: 58px;
+  height: auto;
+}
+
+.toolbar-row .icon-button,
+.viewport-top-right .viewport-icon {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 46px;
+  min-width: 42px;
+  padding: 4px 6px;
+}
+
+.toolbar-row .icon-button img,
+.viewport-top-right .viewport-icon img {
+  margin: 0;
+}
+
+.eph-icon-caption {
+  display: block;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8px;
+  line-height: 9px;
+  color: #aeb4bd;
+  pointer-events: none;
+}
+
+.viewport-top-right {
+  align-items: flex-start;
+}
