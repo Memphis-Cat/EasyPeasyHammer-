@@ -27,6 +27,13 @@
   padding-right: 3px;
 }
 
+.eph-recent-map-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
 .eph-recent-map {
   width: 100%;
   min-width: 0;
@@ -83,6 +90,18 @@
   white-space: nowrap;
 }
 
+.eph-recent-map-delete {
+  min-width: 58px;
+  padding: 0 9px;
+  border: 1px solid #493139;
+  border-radius: 7px;
+  background: #211519;
+  color: #c58e99;
+  cursor: pointer;
+  font-size: 10px;
+}
+.eph-recent-map-delete:hover { background: #321b21; border-color: #70424d; color: #efb3be; }
+
 .eph-recent-maps-empty {
   padding: 12px;
   border: 1px dashed #303844;
@@ -91,3 +110,39 @@
   text-align: center;
   font-size: 11px;
 }
+
+.eph-delete-map-dialog {
+  width: min(510px, calc(100vw - 42px));
+  padding: 0;
+  border: 1px solid #343b46;
+  border-radius: 8px;
+  background: #15191f;
+  color: #e3e7ec;
+  box-shadow: 0 22px 70px rgba(0,0,0,.58);
+}
+.eph-delete-map-dialog::backdrop { background: rgba(0,0,0,.62); }
+.eph-delete-map-card { padding: 18px; }
+.eph-delete-map-card h2 { margin: 0 0 13px; font-size: 18px; }
+.eph-delete-map-name { margin: 0; font-weight: 650; color: #e1e5ea; }
+.eph-delete-map-path { margin: 4px 0 13px; color: #78828f; font-size: 10px; overflow-wrap: anywhere; }
+.eph-delete-map-warning {
+  padding: 10px 11px;
+  border: 1px solid #4e3636;
+  border-radius: 5px;
+  background: #211718;
+  color: #c9a4a5;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.eph-delete-map-card .modal-actions { margin-top: 15px; }
+.eph-delete-danger {
+  min-height: 31px;
+  padding: 0 12px;
+  border: 1px solid #74404b;
+  border-radius: 5px;
+  background: #6e2532;
+  color: white;
+  cursor: pointer;
+}
+.eph-delete-danger:hover:not(:disabled) { background: #842f3e; }
+.eph-delete-danger:disabled { opacity: .5; cursor: wait; }
