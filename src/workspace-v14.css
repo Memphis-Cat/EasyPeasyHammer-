@@ -1,0 +1,163 @@
+/* byanca */
+:root {
+  --eph-left-width: 312px;
+  --eph-right-width: 350px;
+  --eph-bottom-height: 205px;
+  --eph-chat-right-offset: 382px;
+  --eph-toolrail-width: 72px;
+}
+
+.editor-layout.eph-resizable-layout {
+  grid-template-columns: var(--eph-left-width) 6px minmax(0, 1fr) var(--eph-right-width);
+}
+.editor-layout.eph-resizable-layout.eph-left-panel-hidden {
+  grid-template-columns: 0 0 minmax(0, 1fr) var(--eph-right-width);
+}
+.editor-layout.eph-resizable-layout.eph-right-panel-hidden {
+  grid-template-columns: var(--eph-left-width) 6px minmax(0, 1fr) 0;
+}
+.editor-layout.eph-resizable-layout.eph-left-panel-hidden.eph-right-panel-hidden {
+  grid-template-columns: 0 0 minmax(0, 1fr) 0;
+}
+
+.eph-left-resizer {
+  min-width: 6px;
+  width: 6px;
+  cursor: col-resize;
+  background: #111419;
+  border-left: 1px solid #20252c;
+  border-right: 1px solid #242a32;
+  z-index: 16;
+  position: relative;
+}
+.eph-left-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background .12s ease;
+}
+.eph-left-resizer:hover::after,
+body.eph-resizing-left .eph-left-resizer::after { background: #397dc3; }
+body.eph-resizing-left,
+body.eph-resizing-left * { cursor: col-resize !important; user-select: none !important; }
+
+.workspace-column.eph-resizable-workspace {
+  grid-template-rows: minmax(150px, 1fr) 6px var(--eph-bottom-height);
+}
+.workspace-column.eph-resizable-workspace.eph-bottom-panel-hidden {
+  grid-template-rows: minmax(150px, 1fr) 0 0;
+}
+.eph-bottom-resizer {
+  min-height: 6px;
+  height: 6px;
+  cursor: row-resize;
+  background: #111419;
+  border-top: 1px solid #252b33;
+  border-bottom: 1px solid #20252c;
+  z-index: 16;
+  position: relative;
+}
+.eph-bottom-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 2px 0;
+  background: transparent;
+  transition: background .12s ease;
+}
+.eph-bottom-resizer:hover::after,
+body.eph-resizing-bottom .eph-bottom-resizer::after { background: #397dc3; }
+body.eph-resizing-bottom,
+body.eph-resizing-bottom * { cursor: row-resize !important; user-select: none !important; }
+
+.left-panel { position: relative; grid-template-columns: minmax(0, 1fr) var(--eph-toolrail-width); }
+.left-panel.eph-toolrail-hidden { --eph-toolrail-width: 0px; }
+.left-panel.eph-toolrail-hidden #toolRail { display: none !important; }
+.left-panel.eph-toolrail-hidden .asset-browser { border-right: 0; }
+.eph-toolrail-toggle {
+  position: absolute;
+  right: calc(var(--eph-toolrail-width) - 1px);
+  top: 7px;
+  width: 18px;
+  height: 24px;
+  transform: translateX(50%);
+  z-index: 25;
+  padding: 0;
+  border: 1px solid #343b46;
+  border-radius: 4px;
+  background: #171b21;
+  color: #9da6b1;
+  cursor: pointer;
+  line-height: 1;
+}
+.left-panel.eph-toolrail-hidden .eph-toolrail-toggle { right: 0; }
+.eph-toolrail-toggle:hover { color: white; background: #232933; border-color: #46515f; }
+
+.eph-map-tabs {
+  height: 30px;
+  min-height: 30px;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 0 7px;
+  border-top: 1px solid #1d2229;
+  border-bottom: 1px solid #2a3038;
+  background: #0f1216;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #39414c transparent;
+}
+.eph-map-tab {
+  flex: 0 0 auto;
+  min-width: 126px;
+  max-width: 230px;
+  height: 29px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  padding: 0 3px 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: #14181e;
+  color: #8f99a5;
+  cursor: pointer;
+}
+.eph-map-tab:hover { background: #1b2027; color: #c8ced6; }
+.eph-map-tab.active { background: #1b2027; color: #eef2f6; border-bottom-color: #3591ff; }
+.eph-map-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.eph-map-tab.dirty .eph-map-tab-name::after { content: " •"; color: #f0b764; }
+.eph-map-tab-close {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  color: #727b86;
+  font-size: 14px;
+}
+.eph-map-tab-close:hover { background: #2b3139; color: white; }
+.eph-map-tab-add {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 29px;
+  border: 0;
+  background: transparent;
+  color: #8d96a1;
+  cursor: pointer;
+  font-size: 17px;
+}
+.eph-map-tab-add:hover { color: white; background: #20262e; }
+
+/* Anchor floating chat to the viewport's right edge instead of covering Properties. */
+.eph-floating-chat { right: var(--eph-chat-right-offset) !important; }
+
+@media (max-width: 1300px) {
+  :root { --eph-left-width: 280px; --eph-right-width: 320px; }
+}
