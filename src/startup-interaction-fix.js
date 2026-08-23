@@ -98,6 +98,7 @@
   loadPass('collab-local-view-v23.js', '__ephCollabLocalViewV23');
   loadPass('local-history-v22.js', '__ephLocalHistoryV22');
   loadPass('history-bindings-v22.js', '__ephHistoryBindingsV22');
+  loadPass('history-hierarchy-repair-v26.js', '__ephHistoryHierarchyRepairV26');
   loadPass('negative-brush-v22.js', '__ephNegativeBrushV22');
   loadPass('negative-brush-safety-v22.js', '__ephNegativeBrushSafetyV22');
   loadPass('properties-scroll-v23.js', '__ephPropertiesScrollV23');
