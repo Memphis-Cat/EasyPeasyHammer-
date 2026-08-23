@@ -41,6 +41,7 @@
       "large-map-service.js",
       "large-map-spatial-service-v19.js",
       "map-local-model-service-v19.js",
+      "map-local-model-service-v20.js",
       "map-local-material-service-v19.js",
       "project-name-service.js",
       "collab-service.js",
