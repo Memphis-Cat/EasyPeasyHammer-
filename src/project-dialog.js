@@ -196,6 +196,7 @@ const LATE_PASSES = [
   'editor-stability-v28.js',
   'close-save-v28.js',
   'solid-entity-unified-v30.js',
+  'viewport-layout-integrity-v35.js',
   'render-core-integrity-v34.js',
   'startup-recents-v14.js'
 ];
