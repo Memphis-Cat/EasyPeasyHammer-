@@ -2,6 +2,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
@@ -15,6 +16,19 @@ const sourceFiles = [
   'vmap-helper-compat-v9.js',
   'vmap-finalize-v10.js'
 ];
+const syntaxOnlyFiles = [
+  path.join(root, 'launcher.js'),
+  path.join(root, 'vmap-text-preflight.js'),
+  path.join(root, 'vmap-write-guard.js'),
+  path.join(sourceRoot, 'project-dialog.js'),
+  path.join(sourceRoot, 'save-guard-v10.js')
+];
+
+function compileScript(filePath) {
+  if (!fs.existsSync(filePath)) throw new Error(`Required compatibility source is missing: ${path.relative(root, filePath)}`);
+  const source = fs.readFileSync(filePath, 'utf8');
+  new vm.Script(source, { filename: filePath });
+}
 
 function runSource(context, fileName) {
   const filePath = path.join(sourceRoot, fileName);
@@ -23,7 +37,31 @@ function runSource(context, fileName) {
   new vm.Script(source, { filename: filePath }).runInContext(context, { timeout: 5000 });
 }
 
+function testDiskGuard(validText) {
+  require('../vmap-write-guard');
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'eph-vmap-check-'));
+  const validPath = path.join(folder, 'valid.vmap');
+  const invalidPath = path.join(folder, 'invalid.vmap');
+  try {
+    fs.writeFileSync(validPath, validText, 'utf8');
+    if (!fs.existsSync(validPath)) throw new Error('VMAP disk guard prevented a valid VMAP write.');
+
+    let rejected = false;
+    try {
+      fs.writeFileSync(invalidPath, '<!-- dmx encoding keyvalues2 4 format vmap 40 -->\n"Broken"\n{\n', 'utf8');
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error('VMAP disk guard allowed malformed VMAP text to be written.');
+    if (fs.existsSync(invalidPath)) throw new Error('Malformed VMAP reached disk before the write guard rejected it.');
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+}
+
 function main() {
+  for (const filePath of syntaxOnlyFiles) compileScript(filePath);
+
   const sandbox = {
     console,
     structuredClone,
@@ -97,8 +135,11 @@ function main() {
   const extracted = VMAP.extractObjects(reparsed).filter(object => object?.dmxId);
   if (extracted.length < 2) throw new Error(`Expected the Part and terrain after round-trip, got ${extracted.length} editable nodes.`);
 
+  testDiskGuard(text);
+
   console.log('VMAP compatibility self-test passed.');
   console.log(`Validated ${text.length.toLocaleString()} characters of serialized VMAP text.`);
+  console.log('Validated final disk-write rejection for malformed VMAP text.');
 }
 
 try {
