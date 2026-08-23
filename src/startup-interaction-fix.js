@@ -93,6 +93,7 @@
   loadPass('collab-chat-v22.js', '__ephCollabChatV22');
   loadPass('multi-select-v22.js', '__ephMultiSelectV22');
   loadPass('local-history-v22.js', '__ephLocalHistoryV22');
+  loadPass('history-bindings-v22.js', '__ephHistoryBindingsV22');
   loadPass('negative-brush-v22.js', '__ephNegativeBrushV22');
   loadPass('negative-brush-safety-v22.js', '__ephNegativeBrushSafetyV22');
 
