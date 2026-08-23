@@ -19,16 +19,24 @@ const entries = [
   ['collab-visuals.js', 'collab-visuals.bundle.js', false]
 ];
 
+function exposeViewportThree(sourceText) {
+  const matches = [...sourceText.matchAll(/^import\s+.*?;\s*$/gm)];
+  const last = matches.at(-1);
+  if (!last) return sourceText;
+  const at = last.index + last[0].length;
+  // Runtime compatibility passes must use the *same* Three.js module instance as
+  // the viewport. Bundling another copy causes THREE's multiple-instances warning
+  // and can make helpers/streaming fail their dependency check.
+  return `${sourceText.slice(0, at)}\nwindow.THREE = THREE;\n${sourceText.slice(at)}`;
+}
+
 async function bundleOne(sourceName, outputName, guardViewport) {
   const source = path.join(sourceRoot, sourceName);
   const outfile = path.join(outputRoot, outputName);
-  const banner = guardViewport
-    ? '// byanca\nif (!window.EPH3D) {'
-    : '// byanca';
+  const banner = guardViewport ? '// byanca\nif (!window.EPH3D) {' : '// byanca';
   const footer = guardViewport ? '}' : '';
 
-  await esbuild.build({
-    entryPoints: [source],
+  const options = {
     outfile,
     bundle: true,
     format: 'iife',
@@ -40,7 +48,20 @@ async function bundleOne(sourceName, outputName, guardViewport) {
     banner: { js: banner },
     footer: footer ? { js: footer } : undefined,
     logLevel: 'silent'
-  });
+  };
+
+  if (guardViewport) {
+    options.stdin = {
+      contents: exposeViewportThree(fs.readFileSync(source, 'utf8')),
+      resolveDir: sourceRoot,
+      sourcefile: sourceName,
+      loader: 'js'
+    };
+  } else {
+    options.entryPoints = [source];
+  }
+
+  await esbuild.build(options);
 
   const stat = fs.statSync(outfile);
   console.log(`Bundled ${sourceName} -> ${path.relative(root, outfile)} (${Math.round(stat.size / 1024)} KB)`);
@@ -52,9 +73,7 @@ async function main() {
 
   for (const entry of entries) await bundleOne(...entry);
 
-  const missing = entries
-    .map(([, outputName]) => path.join(outputRoot, outputName))
-    .filter(file => !fs.existsSync(file));
+  const missing = entries.map(([, outputName]) => path.join(outputRoot, outputName)).filter(file => !fs.existsSync(file));
   if (missing.length) throw new Error(`Renderer bundle output missing: ${missing.join(', ')}`);
 
   console.log('EasyPeasyHammer renderer bundles ready.');
