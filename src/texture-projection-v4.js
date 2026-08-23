@@ -4,7 +4,7 @@ import * as THREE from 'three';
 const VMAP = window.EPH_VMAP;
 const TILE_WORLD_UNITS = 16;
 const UV_PER_WORLD_UNIT = 1 / TILE_WORLD_UNITS;
-const DEFAULT_SCALE = [0.25, 0.25];
+const DEFAULT_SCALE = [0.125, 0.125];
 const DEFAULT_SIZE = [512, 512];
 const DEG = 180 / Math.PI;
 
@@ -18,14 +18,23 @@ const dot3 = (a, b) => (Number(a?.[0]) || 0) * (Number(b?.[0]) || 0)
   + (Number(a?.[2]) || 0) * (Number(b?.[2]) || 0);
 
 function defaultAxes(vertices, face) {
+  if (VMAP.defaultTextureAxes) return VMAP.defaultTextureAxes(vertices || [], face || []);
   const normal = VMAP.faceNormal(vertices || [], face || []);
-  const ax = Math.abs(normal[0]);
-  const ay = Math.abs(normal[1]);
-  const az = Math.abs(normal[2]);
-
-  if (az >= ax && az >= ay) return { u: [1, 0, 0, 0], v: [0, -1, 0, 0] };
-  if (ax >= ay) return { u: [0, 1, 0, 0], v: [0, 0, -1, 0] };
-  return { u: [1, 0, 0, 0], v: [0, 0, -1, 0] };
+  const candidates = [
+    { n: [0, 0, 1], u: [1, 0, 0, 0], v: [0, -1, 0, 0] },
+    { n: [0, 0, -1], u: [1, 0, 0, 0], v: [0, -1, 0, 0] },
+    { n: [0, -1, 0], u: [1, 0, 0, 0], v: [0, 0, -1, 0] },
+    { n: [0, 1, 0], u: [-1, 0, 0, 0], v: [0, 0, -1, 0] },
+    { n: [-1, 0, 0], u: [0, -1, 0, 0], v: [0, 0, -1, 0] },
+    { n: [1, 0, 0], u: [0, 1, 0, 0], v: [0, 0, -1, 0] },
+  ];
+  let best = candidates[0];
+  let score = -Infinity;
+  for (const candidate of candidates) {
+    const next = normal[0] * candidate.n[0] + normal[1] * candidate.n[1] + normal[2] * candidate.n[2];
+    if (next >= score) { score = next; best = candidate; }
+  }
+  return { u: [...best.u], v: [...best.v] };
 }
 
 function isGeneratedPart(object) {
@@ -38,6 +47,13 @@ function markGeneratedPart(object) {
   if (!object || object.type !== 'part') return object;
   object.ephProjectionMode = 'tile16';
   return object;
+}
+
+function generatedScale(width, height) {
+  return [
+    TILE_WORLD_UNITS / Math.max(1, Number(width) || 512),
+    TILE_WORLD_UNITS / Math.max(1, Number(height) || 512),
+  ];
 }
 
 function projectFace(object, faceIndex, width = null, height = null) {
@@ -56,8 +72,9 @@ function projectFace(object, faceIndex, width = null, height = null) {
   const storedSize = numbers(object.faceTextureSizes[faceIndex] || DEFAULT_SIZE, 2, 512);
   const textureWidth = Math.max(1, Number(width) || storedSize[0] || 512);
   const textureHeight = Math.max(1, Number(height) || storedSize[1] || 512);
+  const scale = generatedScale(textureWidth, textureHeight);
 
-  object.faceTextureScale[faceIndex] = [...DEFAULT_SCALE];
+  object.faceTextureScale[faceIndex] = scale;
   object.faceTextureAxisU[faceIndex] = axisU;
   object.faceTextureAxisV[faceIndex] = axisV;
   object.faceTextureSizes[faceIndex] = [textureWidth, textureHeight];
@@ -67,8 +84,8 @@ function projectFace(object, faceIndex, width = null, height = null) {
   const uv = face.map(vertexIndex => {
     const point = object.vertices?.[vertexIndex] || [0, 0, 0];
     return [
-      dot3(point, axisU) * UV_PER_WORLD_UNIT + shiftU,
-      dot3(point, axisV) * UV_PER_WORLD_UNIT + shiftV,
+      (dot3(point, axisU) / scale[0] + shiftU) / textureWidth,
+      (dot3(point, axisV) / scale[1] + shiftV) / textureHeight,
     ];
   });
 
@@ -102,11 +119,13 @@ function setFaceMaterialInfo(object, faceIndices, width, height) {
     const face = object.faces?.[faceIndex];
     if (!face) continue;
     const axes = defaultAxes(object.vertices, face);
-    object.faceTextureScale[faceIndex] = [...DEFAULT_SCALE];
+    const textureWidth = Math.max(1, Number(width) || 512);
+    const textureHeight = Math.max(1, Number(height) || 512);
+    object.faceTextureScale[faceIndex] = isGeneratedPart(object) ? generatedScale(textureWidth, textureHeight) : [...DEFAULT_SCALE];
     object.faceTextureAxisU[faceIndex] = axes.u;
     object.faceTextureAxisV[faceIndex] = axes.v;
-    object.faceTextureSizes[faceIndex] = [Math.max(1, Number(width) || 512), Math.max(1, Number(height) || 512)];
-    if (isGeneratedPart(object)) projectFace(object, faceIndex, width, height);
+    object.faceTextureSizes[faceIndex] = [textureWidth, textureHeight];
+    if (isGeneratedPart(object)) projectFace(object, faceIndex, textureWidth, textureHeight);
   }
   return object;
 }
@@ -143,7 +162,10 @@ if (VMAP && !VMAP.__ephTextureProjectionV4) {
 
   const previousAddPart = VMAP.addPart.bind(VMAP);
   VMAP.addPart = (doc, options = {}) => {
-    const object = markGeneratedPart(previousAddPart(doc, options));
+    const object = previousAddPart(doc, options);
+    const specialMesh = /^EPH_(?:DECAL|TERRAIN)_/i.test(String(options.meshName || ''));
+    if (specialMesh) return object;
+    markGeneratedPart(object);
     projectObject(object, null, true);
     return object;
   };
