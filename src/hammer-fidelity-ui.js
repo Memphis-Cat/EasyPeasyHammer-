@@ -40,7 +40,7 @@
   }
 
   function projectionKey(object) {
-    if (!object || object.type !== 'part') return '';
+    if (!object || object.type !== 'part' || object.ephLargeStreamed) return '';
     const vertices = (object.vertices || []).map(vertex => vertex.map(value => Number(value).toFixed(4)).join(',')).join(';');
     const materials = (object.faceMaterials || []).join('|');
     const scales = JSON.stringify(object.faceTextureScale || []);
@@ -50,7 +50,8 @@
   }
 
   async function synchronizeProjection(object) {
-    if (!object || object.type !== 'part' || !object.faces?.length || !window.EPH_TEXTURE_PROJECTION_V4) return;
+    if (!object || object.type !== 'part' || object.ephLargeStreamed || !object.faces?.length || !window.EPH_TEXTURE_PROJECTION_V4) return;
+    if (window.EPH_TEXTURE_PROJECTION_V4.isGeneratedPart && !window.EPH_TEXTURE_PROJECTION_V4.isGeneratedPart(object)) return;
 
     const key = projectionKey(object);
     const previousState = projectionState.get(object);
@@ -126,10 +127,10 @@
 
   const synchronizeAll = () => {
     for (const object of S.objects || []) {
-      if (object?.type === 'part') synchronizeProjection(object);
+      if (object?.type === 'part' && !object.ephLargeStreamed) synchronizeProjection(object);
     }
   };
 
   setTimeout(synchronizeAll, 80);
-  setInterval(synchronizeAll, 450);
+  setInterval(synchronizeAll, 1000);
 })();
