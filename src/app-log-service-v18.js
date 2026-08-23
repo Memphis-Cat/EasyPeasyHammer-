@@ -19,8 +19,8 @@ function stringify(value, depth = 0) {
   for (const [key, item] of Object.entries(value).slice(0, 24)) {
     if (/password|token|secret|authorization/i.test(key)) out[key] = '<redacted>';
     else if (typeof item === 'string' && item.length > 500) out[key] = `${item.slice(0, 120)}… <string ${item.length.toLocaleString()} chars>`;
-    else if (Array.isArray(item) && item.length > 32) out[key] = `<array ${item.length.toLocaleString()} items>`;
-    else if (depth >= 2 && typeof item === 'object' && item) out[key] = '<object>';
+    else if (Array.isArray(item)) out[key] = item.length > 32 ? `<array ${item.length.toLocaleString()} items>` : stringify(item, depth + 1);
+    else if (typeof item === 'object' && item) out[key] = depth >= 2 ? '<object>' : stringify(item, depth + 1);
     else out[key] = item;
   }
   try { return JSON.stringify(out); } catch { return String(value); }
@@ -121,8 +121,6 @@ function registerAppLogService({ ipcMain, app }) {
     return { ok: true };
   });
 
-  // Install before the rest of the app registers IPC handlers. This gives the
-  // diagnostics view timings/results for essentially every renderer -> main call.
   ipcMain.handle = function(channel, listener) {
     if (String(channel).startsWith('app-log:')) return rawHandle(channel, listener);
     return rawHandle(channel, async (event, ...args) => {
