@@ -112,19 +112,9 @@ function setObjectTransform(object, transform) {
   object.scale = [...transform.scale];
 }
 
-function localToWorldObject(doc, object, parentById) {
-  if (!object?.dmxId || !object.sourceParentDmxId || !object.sourceDepth) return object;
-  const local = {
-    position: clone3(object.position, 0),
-    rotation: clone3(object.rotation, 0),
-    scale: clone3(object.scale, 1)
-  };
-  const parentWorld = parentWorldMatrix(doc, object, parentById);
-  const exactWorldMatrix = parentWorld.clone().multiply(localMatrixFromValues(local.position, local.rotation, local.scale));
-  const world = decomposeMatrix(exactWorldMatrix);
+function updateNestedBaseline(object, local, exactWorldMatrix, world) {
   const recomposed = localMatrixFromValues(world.position, world.rotation, world.scale);
   const shearError = matrixDifference(exactWorldMatrix, recomposed);
-
   object.sourceNestedTransform = true;
   object.sourceLocalPosition = [...local.position];
   object.sourceLocalRotation = [...local.rotation];
@@ -134,6 +124,18 @@ function localToWorldObject(doc, object, parentById) {
   object.sourceWorldScale = [...world.scale];
   object.sourceNestedShear = shearError > EPSILON;
   object.sourceNestedShearError = shearError;
+}
+
+function localToWorldObject(doc, object, parentById) {
+  if (!object?.dmxId || !object.sourceParentDmxId || !object.sourceDepth) return object;
+  const local = {
+    position: clone3(object.position, 0),
+    rotation: clone3(object.rotation, 0),
+    scale: clone3(object.scale, 1)
+  };
+  const exactWorldMatrix = parentWorldMatrix(doc, object, parentById).multiply(localMatrixFromValues(local.position, local.rotation, local.scale));
+  const world = decomposeMatrix(exactWorldMatrix);
+  updateNestedBaseline(object, local, exactWorldMatrix, world);
   setObjectTransform(object, world);
   return object;
 }
@@ -170,13 +172,15 @@ function setLocalForWrite(doc, object, parentById) {
 
 function restoreWorldFromCurrentLocal(doc, object, parentById) {
   if (!object?.sourceNestedTransform) return;
-  const parentWorld = parentWorldMatrix(doc, object, parentById);
-  const worldMatrix = parentWorld.multiply(localMatrixFromValues(object.position, object.rotation, object.scale));
-  const world = decomposeMatrix(worldMatrix);
+  const local = {
+    position: clone3(object.position, 0),
+    rotation: clone3(object.rotation, 0),
+    scale: clone3(object.scale, 1)
+  };
+  const exactWorldMatrix = parentWorldMatrix(doc, object, parentById).multiply(localMatrixFromValues(local.position, local.rotation, local.scale));
+  const world = decomposeMatrix(exactWorldMatrix);
+  updateNestedBaseline(object, local, exactWorldMatrix, world);
   setObjectTransform(object, world);
-  object.sourceLocalPosition = object.sourceNestedShear ? object.sourceLocalPosition : undefined;
-  object.sourceLocalRotation = object.sourceNestedShear ? object.sourceLocalRotation : undefined;
-  object.sourceLocalScale = object.sourceNestedShear ? object.sourceLocalScale : undefined;
 }
 
 if (VMAP && !VMAP.__ephNestedTransformV11) {
@@ -197,15 +201,16 @@ if (VMAP && !VMAP.__ephNestedTransformV11) {
     const local = setLocalForWrite(doc, object, parents);
     if (local === false) return false;
     object.__ephNestedLocalPass = true;
+    let restored = false;
     try {
       const result = previousApply(doc, object);
-      if (!result) return result;
       restoreWorldFromCurrentLocal(doc, object, parents);
-      delete object.vmapCompatibilityError;
+      restored = true;
+      if (result) delete object.vmapCompatibilityError;
       return result;
     } finally {
       delete object.__ephNestedLocalPass;
-      if (object.sourceNestedTransform && object.position === local?.position) restoreWorldFromCurrentLocal(doc, object, parents);
+      if (!restored) restoreWorldFromCurrentLocal(doc, object, parents);
     }
   };
 
