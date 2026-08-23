@@ -5,6 +5,7 @@ electron.app.commandLine.appendSwitch('disable-renderer-backgrounding');
 electron.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 require('./electron-security');
+require('./close-safety');
 
 // Install diagnostics first so every later IPC handler/main-process failure is
 // recorded, including failures that happen before the editor screen opens.
