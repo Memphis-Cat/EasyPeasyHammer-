@@ -7,6 +7,7 @@
 
   const api = window.easyPeasyHammer;
   const localCache = new Map();
+  const localTextureCache = new Map();
   const unavailable = new Set();
 
   function report(level, message, meta = null) {
@@ -15,11 +16,51 @@
     api?.appLog?.(level, 'map-local-asset', message, meta).catch?.(() => {});
   }
 
+  function projectPath() {
+    return String(window.S?.project?.vmapPath || (typeof S !== 'undefined' ? S?.project?.vmapPath : '') || '');
+  }
+
+  async function localTexture(viewport, resource) {
+    const vmapPath = projectPath();
+    const normalized = String(resource || '').replace(/\\/g, '/');
+    if (!vmapPath || !normalized || !api?.mapLocalMaterial) return null;
+    const cacheKey = `${vmapPath.toLowerCase()}|${normalized.toLowerCase()}`;
+    if (!localTextureCache.has(cacheKey)) {
+      localTextureCache.set(cacheKey, (async () => {
+        let result;
+        try { result = await api.mapLocalMaterial(vmapPath, normalized); }
+        catch (error) {
+          report('error', `Map-local material request failed: ${normalized}`, error?.message || String(error));
+          return null;
+        }
+        if (!result?.ok || !result.url) {
+          if (result?.local) report('warning', `Map-local VMAT could not produce a preview texture: ${normalized}`, result?.error || 'unknown error');
+          return null;
+        }
+        return new Promise(resolve => viewport.textureLoader.load(result.url, texture => {
+          const THREE = window.EPH_THREE || window.THREE;
+          if (THREE) {
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+          }
+          texture.userData ||= {};
+          texture.userData.ephMapLocal = true;
+          report('normal', `Loaded map-local material texture: ${normalized}`, { source: result.source, texture: result.texture });
+          resolve(texture);
+        }, undefined, error => {
+          report('error', `Browser could not load map-local texture for ${normalized}`, error?.message || String(error));
+          resolve(null);
+        }));
+      })());
+    }
+    return localTextureCache.get(cacheKey);
+  }
+
   async function materialFor(viewport, THREE, resource) {
-    const path = String(resource || 'ERROR');
+    const materialPath = String(resource || 'ERROR');
     let texture = null;
-    if (path !== 'ERROR') {
-      try { texture = await viewport.loadMaterialTexture(path); }
+    if (materialPath !== 'ERROR') {
+      try { texture = await viewport.loadMaterialTexture(materialPath); }
       catch {}
     }
     const material = new THREE.MeshStandardMaterial({
@@ -29,8 +70,8 @@
       side: THREE.DoubleSide,
       map: texture || viewport.errorTexture || null,
     });
-    material.userData.resource = path;
-    if (!texture && path !== 'ERROR') report('warning', `Material for map-local model could not be previewed: ${path}`);
+    material.userData.resource = materialPath;
+    if (!texture && materialPath !== 'ERROR') report('warning', `Material for map-local model could not be previewed: ${materialPath}`);
     return material;
   }
 
@@ -91,10 +132,6 @@
     return scene;
   }
 
-  function projectPath() {
-    return String(window.S?.project?.vmapPath || (typeof S !== 'undefined' ? S?.project?.vmapPath : '') || '');
-  }
-
   async function localModel(viewport, resource) {
     const vmapPath = projectPath();
     const normalized = String(resource || '').replace(/\\/g, '/');
@@ -135,18 +172,35 @@
 
   function install() {
     const viewport = window.EPH3D || (typeof S !== 'undefined' ? S?.viewport : null);
-    if (!viewport?.loadModel || viewport.loadModel.__ephMapLocalV19) return Boolean(viewport?.loadModel?.__ephMapLocalV19);
-    const raw = viewport.loadModel.bind(viewport);
-    const wrapped = async function(resource) {
-      const local = await localModel(viewport, resource);
-      if (local) return local;
-      return raw(resource);
-    };
-    wrapped.__ephMapLocalV19 = true;
-    wrapped.__ephPreviousLoadModel = raw;
-    viewport.loadModel = wrapped;
-    report('normal', 'Map-local model resolver installed.');
-    return true;
+    if (!viewport?.loadModel || !viewport?.loadMaterialTexture) return false;
+
+    if (!viewport.loadMaterialTexture.__ephMapLocalV19) {
+      const rawMaterial = viewport.loadMaterialTexture.bind(viewport);
+      const materialWrapper = async function(resource) {
+        const normal = await rawMaterial(resource);
+        if (normal) return normal;
+        return localTexture(viewport, resource);
+      };
+      materialWrapper.__ephMapLocalV19 = true;
+      materialWrapper.__ephPreviousLoadMaterial = rawMaterial;
+      viewport.loadMaterialTexture = materialWrapper;
+      report('normal', 'Map-local material resolver installed.');
+    }
+
+    if (!viewport.loadModel.__ephMapLocalV19) {
+      const rawModel = viewport.loadModel.bind(viewport);
+      const modelWrapper = async function(resource) {
+        const local = await localModel(viewport, resource);
+        if (local) return local;
+        return rawModel(resource);
+      };
+      modelWrapper.__ephMapLocalV19 = true;
+      modelWrapper.__ephPreviousLoadModel = rawModel;
+      viewport.loadModel = modelWrapper;
+      report('normal', 'Map-local model resolver installed.');
+    }
+
+    return Boolean(viewport.loadModel.__ephMapLocalV19 && viewport.loadMaterialTexture.__ephMapLocalV19);
   }
 
   if (!install()) {
