@@ -131,6 +131,10 @@
     const old = document.getElementById('angleSnap');
     if (!old) return false;
     if (old.tagName === 'INPUT' && old.dataset.ephPrecisionV23 === '1') return true;
+    // advanced-ui.js still inspects the original SELECT.options while it creates
+    // its rotate controls. Do not replace the status select until that synchronous
+    // setup has completed, otherwise its whole viewport install throws.
+    if (!document.querySelector('.rotate-options')) return false;
     const input = document.createElement('input');
     input.id = 'angleSnap';
     input.type = 'number';
