@@ -124,10 +124,11 @@ function renderHints(header) {
   return result;
 }
 function metadata(header) {
-  const name = header.match(/\bentity_tool_name\s*=\s*"([^"]+)"/i)?.[1] || '';
-  const tip = header.match(/\bentity_tool_tip\s*=\s*"([^"]+)"/i)?.[1] || '';
-  const group = header.match(/\bentity_tool_group\s*=\s*"([^"]+)"/i)?.[1] || '';
-  return { name, tip, group };
+  return {
+    name: header.match(/\bentity_tool_name\s*=\s*"([^"]+)"/i)?.[1] || '',
+    tip: header.match(/\bentity_tool_tip\s*=\s*"([^"]+)"/i)?.[1] || '',
+    group: header.match(/\bentity_tool_group\s*=\s*"([^"]+)"/i)?.[1] || ''
+  };
 }
 function choiceBlock(lines, start) {
   const choices = []; let began = false, depth = 0;
@@ -160,7 +161,7 @@ function propertyDefinition(lines, start) {
 function parseProperties(blockLines) {
   const properties = []; let blockDepth = 1;
   for (let i = 0; i < blockLines.length; i++) {
-    const original = stripComment(blockLines[i]); const line = original.trim();
+    const line = stripComment(blockLines[i]).trim();
     const before = blockDepth; blockDepth += delta(line, '[', ']');
     if (!line || before !== 1 || /^(?:input|output)\b/i.test(line)) continue;
     const startMatch = line.match(/^([A-Za-z_][A-Za-z0-9_.]*)\s*\(\s*([^)]*)\)/);
@@ -169,7 +170,6 @@ function parseProperties(blockLines) {
     const full = def.text; const close = full.indexOf(')'); if (close < 0) continue;
     const key = startMatch[1], type = startMatch[2].trim();
     let tail = full.slice(close + 1).trim();
-    // Remove Hammer metadata attributes between the type and the user-facing colon.
     for (let pass = 0; pass < 8; pass++) {
       const next = tail.replace(/^\s*(?:\[[^\]]*\]|\{[^}]*\})\s*/s, '');
       if (next === tail) break; tail = next;
@@ -178,29 +178,47 @@ function parseProperties(blockLines) {
     const eqIndex = (() => { let q=false,e=false,s=0,c=0; for(let x=0;x<tail.length;x++){const ch=tail[x];if(e){e=false;continue;}if(q&&ch==='\\'){e=true;continue;}if(ch==='"'){q=!q;continue;}if(q)continue;if(ch==='[')s++;else if(ch===']')s=Math.max(0,s-1);else if(ch==='{')c++;else if(ch==='}')c=Math.max(0,c-1);else if(ch==='='&&!s&&!c)return x;}return -1; })();
     const definition = eqIndex >= 0 ? tail.slice(0, eqIndex) : tail;
     const parts = splitColons(definition.replace(/^\s*:\s*/, ''));
-    const attrText = full.slice(close + 1, full.length - tail.length);
-    const group = attrText.match(/\bgroup\s*=\s*"([^"]+)"/i)?.[1] || '';
-    const property = { key, type, label: unquote(parts[0] || key) || key, default: unquote(parts[1] || ''), description: unquote(parts.slice(2).join(':') || ''), group, choices: [] };
-    if (/\b(?:choices|flags)\b/i.test(type)) property.choices = choiceBlock(blockLines, Math.max(0, def.end));
+    const attrText = full.slice(close + 1, Math.max(close + 1, full.length - tail.length));
+    const property = { key, type, label: unquote(parts[0] || key) || key, default: unquote(parts[1] || ''), description: unquote(parts.slice(2).join(':') || ''), group: attrText.match(/\bgroup\s*=\s*"([^"]+)"/i)?.[1] || '', choices: [] };
+    if (/\b(?:choices|flags)\b/i.test(type)) property.choices = choiceBlock(blockLines, def.end);
     properties.push(property);
   }
   return properties;
 }
+const CLASS_ASSIGNMENT = /(?:^|\s)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*"([^"]*)")?/;
 function parseDeclarations(text, sourceFile) {
   const lines = String(text || '').split(/\r?\n/).map(stripComment); const out = [];
   for (let i = 0; i < lines.length; i++) {
     const first = lines[i].trim(); const kind = first.match(/^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i); if (!kind) continue;
-    const headerLines = [first]; let cursor = i, blockStart = -1;
-    while (++cursor < lines.length && cursor < i + 180) {
-      const l = lines[cursor].trim(); if (/^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i.test(l)) break;
-      if (l.includes('[')) { blockStart = cursor; break; }
-      if (l) headerLines.push(l);
+    const headerLines = [first]; let cursor = i, blockStart = -1, curlyDepth = delta(first, '{', '}');
+    let assignment = CLASS_ASSIGNMENT.exec(first);
+    while (++cursor < lines.length && cursor < i + 240) {
+      const l = lines[cursor].trim();
+      if (!l) continue;
+      if (curlyDepth === 0 && /^@(PointClass|SolidClass|BaseClass|OverrideClass|ExtendClass)\b/i.test(l) && !assignment) break;
+      const candidate = `${headerLines.join(' ')} ${l}`;
+      const candidateAssignment = CLASS_ASSIGNMENT.exec(candidate);
+      // Only a top-level '[' after '= classname' starts the entity property block.
+      // Arrays inside metadata { ... } are part of editor metadata and must stay
+      // in the header or inherited classes such as Parentname lose their fields.
+      if (curlyDepth === 0 && candidateAssignment && /^\[/.test(l)) { blockStart = cursor; assignment = candidateAssignment; break; }
+      headerLines.push(l);
+      curlyDepth += delta(l, '{', '}');
+      assignment ||= candidateAssignment;
     }
-    const header = headerLines.join(' '); const assignment = header.match(/(?:^|\s)=\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*"([^"]*)")?/); if (!assignment) continue;
+    const header = headerLines.join(' '); assignment = CLASS_ASSIGNMENT.exec(header) || assignment; if (!assignment) continue;
     const helpers = renderHints(header); const meta = metadata(header); const base = header.match(/\bbase\s*\(([^)]*)\)/i)?.[1]?.split(',').map(x => x.trim()).filter(Boolean) || [];
     const block = [];
-    if (blockStart >= 0) { let d = 0; for (let j = blockStart; j < lines.length; j++) { const l = lines[j]; d += delta(l, '[', ']'); if (j > blockStart) block.push(l); if (d <= 0 && j > blockStart) { cursor = j; break; } } i = Math.max(i, cursor); }
-    const kindText = kind[1].toLowerCase(); const primary = helpers.find(h => ['editormodel','studio'].includes(h.type)) || helpers.find(h => ['iconsprite','sprite'].includes(h.type)) || helpers.find(h => h.bounds) || helpers[0] || { type:'none' };
+    if (blockStart >= 0) {
+      let d = 0;
+      for (let j = blockStart; j < lines.length; j++) {
+        const l = lines[j]; d += delta(l, '[', ']'); if (j > blockStart) block.push(l);
+        if (d <= 0 && j > blockStart) { cursor = j; break; }
+      }
+      i = Math.max(i, cursor);
+    }
+    const kindText = kind[1].toLowerCase();
+    const primary = helpers.find(h => ['editormodel','studio'].includes(h.type)) || helpers.find(h => ['iconsprite','sprite'].includes(h.type)) || helpers.find(h => h.bounds) || helpers[0] || { type:'none' };
     out.push({ className: assignment[1], name: meta.name || assignment[2]?.trim() || titleFromClass(assignment[1]), description: meta.tip || assignment[2]?.trim() || '', group: meta.group || '', kind: kindText === 'solidclass' ? 'solid' : kindText === 'pointclass' ? 'point' : kindText === 'baseclass' ? 'base' : 'extend', baseClasses: base, model: ['editormodel','studio'].includes(primary.type) ? primary.resource || '' : '', renderHint: primary, renderHints: helpers, properties: parseProperties(block), sourceFile });
   }
   return out;
@@ -223,8 +241,9 @@ function catalogForInstall(app) {
   const all=new Map(); let parseErrors=0;
   for (const file of files) { try { const rel=path.relative(root,file).replace(/\\/g,'/'); for (const declaration of parseDeclarations(fs.readFileSync(file,'utf8'),rel)) merge(all,declaration); } catch (error) { parseErrors++; globalThis.__ephAppLog?.('warning','fgd',`Could not parse ${file}`,error); } }
   const memo=new Map(); const entities=[...all.keys()].map(k=>resolve(k,all,memo)).filter(x=>x&&['point','solid'].includes(x.kind)&&x.className!=='worldspawn').sort((a,b)=>a.name.localeCompare(b.name)||a.className.localeCompare(b.className));
-  globalThis.__ephAppLog?.('normal','fgd',`Hammer FGD catalog built: ${entities.length} entities from ${files.length} files`,{ point:entities.filter(x=>x.kind==='point').length, solid:entities.filter(x=>x.kind==='solid').length, parseErrors });
-  return { ok:true, root, fgdFiles:files.length, parseErrors, pointEntities:entities.filter(x=>x.kind==='point').length, solidEntities:entities.filter(x=>x.kind==='solid').length, entities };
+  const pointEntities=entities.filter(x=>x.kind==='point').length, solidEntities=entities.filter(x=>x.kind==='solid').length;
+  globalThis.__ephAppLog?.('normal','fgd',`Hammer FGD catalog built: ${entities.length} entities from ${files.length} files`,{ point:pointEntities, solid:solidEntities, parseErrors });
+  return { ok:true, root, fgdFiles:files.length, parseErrors, pointEntities, solidEntities, entities };
 }
 function registerEntityFgdServiceV18({ ipcMain, app }) {
   if (globalThis.__ephEntityFgdServiceV18) return; globalThis.__ephEntityFgdServiceV18=true; try{ipcMain.removeHandler('entities:fgd-catalog');}catch{}
