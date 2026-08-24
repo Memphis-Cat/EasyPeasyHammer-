@@ -15,44 +15,69 @@
 
   const card = document.querySelector('#startupScreen .startup-card');
   if (!card) return;
-  card.classList.add('eph-recent-startup');
+  card.classList.add('eph-recent-startup', 'eph-modern-startup');
 
   const legacyResume = document.getElementById('resumePanel');
   const legacyForget = document.getElementById('forgetSessionButton');
   const actions = card.querySelector('.startup-actions');
 
-  const section = document.createElement('section');
-  section.id = 'ephRecentMaps';
-  section.className = 'eph-recent-maps';
-  section.innerHTML = `
-    <div class="eph-recent-maps-title">Recent maps</div>
-    <div id="ephRecentMapsList" class="eph-recent-maps-list">
-      <div class="eph-recent-maps-empty">Loading maps…</div>
-    </div>`;
-  if (actions) card.insertBefore(section, actions);
-  else card.appendChild(section);
+  let section = document.getElementById('ephRecentMaps');
+  if (!section) {
+    section = document.createElement('section');
+    section.id = 'ephRecentMaps';
+    section.className = 'eph-recent-maps';
+    section.innerHTML = `
+      <div class="eph-recent-maps-header">
+        <div class="eph-recent-maps-title">Recent projects</div>
+        <div class="eph-recent-maps-hint">Open a map to continue</div>
+      </div>
+      <div id="ephRecentMapsList" class="eph-recent-maps-list">
+        <div class="eph-recent-maps-empty">Loading recent maps…</div>
+      </div>`;
+    if (actions) card.insertBefore(section, actions);
+    else card.appendChild(section);
+  } else {
+    section.classList.add('eph-recent-maps');
+    if (!section.querySelector('.eph-recent-maps-header')) {
+      const oldTitle = section.querySelector('.eph-recent-maps-title');
+      const header = document.createElement('div');
+      header.className = 'eph-recent-maps-header';
+      const title = oldTitle || document.createElement('div');
+      title.className = 'eph-recent-maps-title';
+      title.textContent = 'Recent projects';
+      const hint = document.createElement('div');
+      hint.className = 'eph-recent-maps-hint';
+      hint.textContent = 'Open a map to continue';
+      header.append(title, hint);
+      section.prepend(header);
+    }
+  }
 
   const list = section.querySelector('#ephRecentMapsList');
+  if (!list) return;
   let renderToken = 0;
   let pendingDelete = null;
 
-  const deleteDialog = document.createElement('dialog');
-  deleteDialog.id = 'ephDeleteMapDialog';
-  deleteDialog.className = 'eph-delete-map-dialog';
-  deleteDialog.innerHTML = `
-    <form class="eph-delete-map-card" method="dialog">
-      <h2>Delete map?</h2>
-      <p id="ephDeleteMapName" class="eph-delete-map-name"></p>
-      <p id="ephDeleteMapPath" class="eph-delete-map-path"></p>
-      <div class="eph-delete-map-warning">
-        This moves the map to the Windows Recycle Bin. If it is an EasyPeasyHammer project, its whole project folder is moved. If it is an external VMAP, only that VMAP file is moved.
-      </div>
-      <div class="modal-actions">
-        <button id="ephDeleteMapCancel" type="button" class="secondary-button">Cancel</button>
-        <button id="ephDeleteMapConfirm" type="button" class="eph-delete-danger">Delete map</button>
-      </div>
-    </form>`;
-  document.body.appendChild(deleteDialog);
+  let deleteDialog = document.getElementById('ephDeleteMapDialog');
+  if (!deleteDialog) {
+    deleteDialog = document.createElement('dialog');
+    deleteDialog.id = 'ephDeleteMapDialog';
+    deleteDialog.className = 'eph-delete-map-dialog';
+    deleteDialog.innerHTML = `
+      <form class="eph-delete-map-card" method="dialog">
+        <h2>Delete map?</h2>
+        <p id="ephDeleteMapName" class="eph-delete-map-name"></p>
+        <p id="ephDeleteMapPath" class="eph-delete-map-path"></p>
+        <div class="eph-delete-map-warning">
+          This moves the map to the Windows Recycle Bin. If it is an EasyPeasyHammer project, its whole project folder is moved. If it is an external VMAP, only that VMAP file is moved.
+        </div>
+        <div class="modal-actions">
+          <button id="ephDeleteMapCancel" type="button" class="secondary-button">Cancel</button>
+          <button id="ephDeleteMapConfirm" type="button" class="eph-delete-danger">Delete map</button>
+        </div>
+      </form>`;
+    document.body.appendChild(deleteDialog);
+  }
 
   const deleteName = deleteDialog.querySelector('#ephDeleteMapName');
   const deletePath = deleteDialog.querySelector('#ephDeleteMapPath');
@@ -60,8 +85,13 @@
   const deleteConfirm = deleteDialog.querySelector('#ephDeleteMapConfirm');
 
   function hideLegacySingleMapUi() {
-    legacyResume?.classList.add('hidden');
-    legacyForget?.classList.add('hidden');
+    for (const legacy of [legacyResume, legacyForget]) {
+      if (!legacy) continue;
+      legacy.classList.add('hidden');
+      legacy.hidden = true;
+      legacy.setAttribute('aria-hidden', 'true');
+      legacy.style.display = 'none';
+    }
   }
 
   function timeLabel(value) {
@@ -159,7 +189,7 @@
     if (!projects.length) {
       const empty = document.createElement('div');
       empty.className = 'eph-recent-maps-empty';
-      empty.textContent = 'No recent maps yet.';
+      empty.textContent = result?.ok === false ? 'Could not load recent maps.' : 'No recent maps yet.';
       list.appendChild(empty);
       return;
     }
