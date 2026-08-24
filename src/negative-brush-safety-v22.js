@@ -12,8 +12,23 @@
     catch { try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
   };
 
+  function selectedPartIds() {
+    const ids = new Set();
+    const add = values => {
+      for (const id of Array.isArray(values) ? values : []) if (id) ids.add(id);
+    };
+    try { add(window.EPH_MULTI_SELECTION?.ids?.()); } catch {}
+    add(S?.multiSelectedIds);
+    add(S?.viewport?.multiSelectedIds);
+    if (S?.selectedId) ids.add(S.selectedId);
+    return [...ids].filter(id => S?.objects?.some(object => object?.id === id && object?.type === 'part'));
+  }
+
   function capture() {
     if (!S?.doc) return null;
+    const partIds = selectedPartIds();
+    const negativeIds = partIds.filter(id => S.objects.find(object => object.id === id)?.ephNegative);
+    const normalIds = partIds.filter(id => !negativeIds.includes(id));
     return {
       text: VMAP.stringify(S.doc),
       extras: typeof extras === 'function' ? clone(extras()) : null,
@@ -22,6 +37,8 @@
       multi: window.EPH_MULTI_SELECTION?.ids?.() || clone(S.multiSelectedIds || []),
       undo: [...(S.undo || [])],
       redo: [...(S.redo || [])],
+      negativeIds,
+      normalIds,
     };
   }
 
@@ -41,6 +58,30 @@
     S.viewport?.setObjects?.(S.objects, S.selectedId);
   }
 
+  function syncCarvedRender(snapshot) {
+    if (!snapshot) return 0;
+    const viewport = S?.viewport || window.EPH3D;
+    if (!viewport?.updateObject) return 0;
+    let refreshed = 0;
+    const details = [];
+    for (const id of snapshot.normalIds || []) {
+      const object = S?.objects?.find(item => item?.id === id);
+      if (!object || object.type !== 'part') continue;
+      viewport.updateObject(object);
+      refreshed++;
+      details.push({ id: object.id, name: object.name, vertices: object.vertices?.length || 0, faces: object.faces?.length || 0 });
+    }
+    if (S?.selectedId) viewport.select?.(S.selectedId, false);
+    queueMicrotask(() => window.EPH_MULTI_SELECTION?.refresh?.());
+    if (refreshed) {
+      console.info('[Negative Brush Safety V22] Rebuilt carved viewport geometry after CSG.', { refreshed, objects: details });
+      try {
+        window.easyPeasyHammer?.appLog?.('normal', 'negative-brush-safety-v22', 'Rebuilt carved viewport geometry after CSG.', { refreshed, objects: details })?.catch?.(() => {});
+      } catch {}
+    }
+    return refreshed;
+  }
+
   function install() {
     const runtime = window.EPH_NEGATIVE_BRUSH;
     if (installed || !runtime?.carve) return installed;
@@ -55,6 +96,7 @@
         result = false;
       }
       if (!result) restore(snapshot);
+      else syncCarvedRender(snapshot);
       return result;
     };
     runtime.carve = safeCarve;
