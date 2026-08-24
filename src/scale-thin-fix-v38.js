@@ -39,7 +39,7 @@
     const size = bounds?.size || object.size || [64, 64, 64];
     const step = stepValue();
     const axes = axisIndices(viewport.transform?.axis);
-    const threshold = Math.max(0.25, step * 0.25);
+    const threshold = Math.max(0.25, Math.min(1, step));
     const raw = [root.scale.x, root.scale.y, root.scale.z];
     let changed = false;
 
@@ -53,7 +53,7 @@
 
       // TransformControls is multiplicative. On a 0.01u-thick Part, getting
       // back to 64u would otherwise require a 6400x mouse scale. Convert the
-      // drag into an additive world-unit gesture while the axis is very thin.
+      // drag into an additive world-unit gesture while the axis is truly thin.
       // Scale V21 still performs the final world-unit snapping and commit.
       const reference = Math.max(1, step);
       const amplified = Math.max(MIN_SIZE / base, 1 + delta * reference / base);
