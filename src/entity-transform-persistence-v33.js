@@ -15,13 +15,17 @@
   const objectById = id => objects().find(object => object?.id === id) || null;
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const isMeshWrapper = object => Boolean(object && ['entity', 'prop'].includes(object.type) && (object.ephMeshEntity || object.ephMeshChildIds?.length));
-  const isPointEntity = object => Boolean(object?.dmxId && ['entity', 'prop'].includes(object.type) && !isMeshWrapper(object));
+  const isTransformTarget = object => Boolean(
+    object?.dmxId
+    && ['part', 'entity', 'prop'].includes(object.type)
+    && !isMeshWrapper(object)
+  );
 
   function qAngleFromRoot(root) {
     const converter = window.EPH_COORDINATES?.quaternionToQAngle;
     if (typeof converter === 'function' && root?.quaternion) {
       const value = converter(root.quaternion);
-      if (Array.isArray(value) && value.length >= 3) return value.map((item, axis) => finite(item, axis === 0 ? 0 : 0));
+      if (Array.isArray(value) && value.length >= 3) return value.slice(0, 3).map(item => finite(item));
     }
     const rotation = root?.rotation;
     if (!rotation) return [0, 0, 0];
@@ -29,7 +33,7 @@
   }
 
   function syncObjectFromRoot(object, root, write = true) {
-    if (!isPointEntity(object) || !root) return false;
+    if (!isTransformTarget(object) || !root) return false;
     object.position = [finite(root.position?.x), finite(root.position?.y), finite(root.position?.z)];
     object.rotation = qAngleFromRoot(root);
     object.scale = [finite(root.scale?.x, 1), finite(root.scale?.y, 1), finite(root.scale?.z, 1)];
@@ -39,8 +43,13 @@
 
   function syncSelected(vp = installedViewport, write = true) {
     if (!vp?.objectRoots) return false;
-    const object = objectById(vp.selectedId) || objectById(state()?.selectedId);
-    if (!isPointEntity(object)) return false;
+    let object = objectById(vp.selectedId) || objectById(state()?.selectedId);
+    if (isMeshWrapper(object)) {
+      const ids = new Set(object.ephMeshChildIds || []);
+      for (const child of objects()) if (child?.type === 'part' && child.parent === object.id) ids.add(child.id);
+      object = [...ids].map(objectById).find(child => child && vp.objectRoots.has(child.id)) || null;
+    }
+    if (!isTransformTarget(object)) return false;
     const root = vp.objectRoots.get(object.id);
     return syncObjectFromRoot(object, root, write);
   }
@@ -49,7 +58,7 @@
     if (!vp?.objectRoots) return 0;
     let count = 0;
     for (const object of objects()) {
-      if (!isPointEntity(object)) continue;
+      if (!isTransformTarget(object)) continue;
       const root = vp.objectRoots.get(object.id);
       if (root && syncObjectFromRoot(object, root, write)) count++;
     }
@@ -66,13 +75,10 @@
     const raw = current.bind(vp);
     const wrapped = function(...args) {
       const result = raw(...args);
-      if (name === 'syncSelectedFromRoot') {
-        const commit = Boolean(args[0]);
-        syncSelected(this, true);
-        if (commit) queueMicrotask(() => {
-          try { renderProperties?.(); } catch {}
-        });
-      } else syncSelected(this, true);
+      syncSelected(this, true);
+      if (name === 'syncSelectedFromRoot' && Boolean(args[0])) queueMicrotask(() => {
+        try { renderProperties?.(); } catch {}
+      });
       return result;
     };
     copyMarkers(current, wrapped);
@@ -134,5 +140,5 @@
   }, 250);
 
   window.EPH_ENTITY_TRANSFORM_PERSISTENCE_V33 = { syncSelected, syncAll: syncAllLive };
-  console.info('[Entity Transform Persistence V33] Point entity and particle position/rotation/scale are synchronized from the live viewport and forced into VMAP on save.');
+  console.info('[Entity Transform Persistence V33] Parts, mesh-entity geometry, point entities and particles force position/rotation/scale from the live viewport into VMAP on commit and save.');
 })();
