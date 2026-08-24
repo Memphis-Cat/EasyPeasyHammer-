@@ -178,6 +178,7 @@ const LATE_PASSES = [
   'mesh-render-fast-v27.js',
   'source2-coordinates-v23.js',
   'scale-tool-v21.js',
+  'scale-thin-fix-v38.js',
   'scale-legacy-disable-v21.js',
   'transform-precision-v23.js',
   'large-map-bootstrap-v21.js',
