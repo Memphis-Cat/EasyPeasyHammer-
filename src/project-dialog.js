@@ -209,6 +209,7 @@ const LATE_PASSES = [
   'hammer-material-resolver-v42.js',
   'hammer-fgd-visuals-v42.js',
   'selection-surface-move-v39.js',
+  'fgd-reference-picker-v43.js',
   'select-click-capture-v40.js',
   'hammer-placement-gizmo-v41.js',
   'render-frame-watchdog-v36.js',
