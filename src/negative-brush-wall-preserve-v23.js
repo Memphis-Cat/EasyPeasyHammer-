@@ -5,6 +5,7 @@
   window.__ephNegativeBrushWallPreserveV23 = true;
 
   const EPSILON = 1e-5;
+  const BOUNDARY_EPSILON = 1e-3;
   const ROUND = 100000;
   const RAD = Math.PI / 180;
   let installed = false;
@@ -51,6 +52,35 @@
     const center = boundsForVertices(object.vertices || []).getCenter(new T.Vector3());
     if (normal.dot(faceCenter.clone().sub(center)) < 0) points.reverse();
     return points;
+  }
+
+  function planeFor(points) {
+    if (!points || points.length < 3) return null;
+    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
+    if (normal.lengthSq() < EPSILON * EPSILON) return null;
+    normal.normalize();
+    return { normal, w: normal.dot(points[0]) };
+  }
+
+  function targetBoundaryPlanes(targetBefore) {
+    const planes = [];
+    for (const face of targetBefore?.faces || []) {
+      const points = orientedLocalFace(targetBefore, face);
+      const plane = planeFor(points);
+      if (plane) planes.push(plane);
+    }
+    return planes;
+  }
+
+  function liesOnOriginalExterior(points, planes) {
+    const candidate = planeFor(points);
+    if (!candidate) return false;
+    for (const plane of planes || []) {
+      const alignment = Math.abs(candidate.normal.dot(plane.normal));
+      if (alignment < 0.9999) continue;
+      if (points.every(point => Math.abs(plane.normal.dot(point) - plane.w) <= BOUNDARY_EPSILON)) return true;
+    }
+    return false;
   }
 
   function clipAgainstAxis(points, axis, boundary, keepGreater) {
@@ -107,6 +137,7 @@
     const inverseTarget = targetMatrix.clone().invert();
     const cutterMatrix = matrixFor(cutter);
     const originalBounds = boundsForVertices(targetBefore.vertices || []);
+    const exteriorPlanes = targetBoundaryPlanes(targetBefore);
     if (originalBounds.isEmpty()) return 0;
 
     const existing = existingTriangleKeys(target);
@@ -124,7 +155,6 @@
       return index;
     };
 
-    const worldUp = new T.Vector3(0, 0, 1);
     const material = targetBefore.faceMaterials?.[0] || target.faceMaterials?.[0] || 'ERROR';
     let added = 0;
 
@@ -132,19 +162,22 @@
       const local = orientedLocalFace(cutter, face);
       if (local.length < 3) continue;
       const world = local.map(point => point.clone().applyMatrix4(cutterMatrix));
-      const worldNormal = world[1].clone().sub(world[0]).cross(world[2].clone().sub(world[0]));
-      if (worldNormal.lengthSq() < EPSILON * EPSILON) continue;
-      worldNormal.normalize();
 
-      // The upward-facing cutter cap is the opening. Keep the side walls and
-      // lower cap so a recessed carve remains a closed, visible cavity.
-      if (worldNormal.dot(worldUp) > 0.75) continue;
+      // Convert the cutter face into the target's local space, then keep only
+      // the part that actually lies inside the original target bounds.
+      let targetLocal = world.map(point => point.clone().applyMatrix4(inverseTarget));
+      targetLocal = clipToBounds(targetLocal, originalBounds);
+      if (targetLocal.length < 3) continue;
+
+      // A cutter face that is coplanar with an original exterior face is an
+      // opening, not an interior cavity wall. This generalizes the old +Z-only
+      // rule: touching the top, a side wall, the bottom, or multiple exterior
+      // faces leaves every touched face open exactly like a real subtraction.
+      if (liesOnOriginalExterior(targetLocal, exteriorPlanes)) continue;
 
       // Cutter faces point out of the cutter. The cavity surface must face the
       // opposite way: into the empty carved volume.
-      let targetLocal = world.map(point => point.clone().applyMatrix4(inverseTarget)).reverse();
-      targetLocal = clipToBounds(targetLocal, originalBounds);
-      if (targetLocal.length < 3) continue;
+      targetLocal.reverse();
 
       for (let i = 1; i < targetLocal.length - 1; i++) {
         const triangle = [targetLocal[0], targetLocal[i], targetLocal[i + 1]];
@@ -214,7 +247,7 @@
 
     runtime.carve.__ephWallPreserveV23 = true;
     installed = true;
-    console.info('[Negative Brush Wall Preserve V23] Installed.');
+    console.info('[Negative Brush Wall Preserve V23] Multi-face exterior openings and cavity preservation installed.');
     return true;
   }
 
