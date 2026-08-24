@@ -5,10 +5,25 @@ const path = require('path');
 electron.app.commandLine.appendSwitch('disable-renderer-backgrounding');
 electron.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+// Use the EasyPeasyHammer hammer artwork everywhere Electron can expose an app
+// identity: dev/runtime windows, the Windows taskbar, and packaged builds.
+const APP_ID = 'com.memphiscat.easypeasyhammer';
 const appIcon = path.join(__dirname, 'assets', 'app-icon.png');
+if (process.platform === 'win32') {
+  try { electron.app.setAppUserModelId(APP_ID); } catch {}
+}
 electron.app.on('browser-window-created', (_event, window) => {
   try { window.setIcon(appIcon); } catch {}
 });
+
+electron.app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    try { electron.app.setAppUserModelId(APP_ID); } catch {}
+  }
+  for (const window of electron.BrowserWindow.getAllWindows()) {
+    try { window.setIcon(appIcon); } catch {}
+  }
+}).catch(() => {});
 
 require('./electron-security');
 require('./close-safety');
