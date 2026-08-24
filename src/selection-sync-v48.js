@@ -28,9 +28,15 @@
       multi.set([], null, { selectViewport: false });
     }
 
-    // The synchronizer is only for state ownership. Do not call viewport.select
-    // again here or we would recursively re-enter the wrapper below.
+    // State ownership only: do not call viewport.select again from here.
     viewport.multiSelectedIds = [...(state()?.multiSelectedIds || [])];
+  }
+
+  function looksCanonical(id) {
+    const s = state();
+    if (!id) return !s?.selectedId && !(s?.multiSelectedIds?.length);
+    const ids = Array.isArray(s?.multiSelectedIds) ? s.multiSelectedIds : [];
+    return s?.selectedId === id && ids.includes(id);
   }
 
   function install(viewport = window.EPH3D || state()?.viewport) {
@@ -44,9 +50,9 @@
 
     let insideSetObjects = 0;
 
-    // setObjects already has an explicit selectedId and multi-select-v22 has a
-    // dedicated reconciliation pass for it. Suppress the select() call that the
-    // viewport performs internally so it cannot collapse a valid multi-select.
+    // setObjects has an explicit selectedId and multi-select-v22 owns its
+    // reconciliation. Suppress the select() call performed inside setObjects so
+    // it cannot collapse a valid group while a map/object list is rebuilding.
     const previousSetObjects = viewport.setObjects;
     const wrappedSetObjects = function(...args) {
       insideSetObjects++;
@@ -64,12 +70,21 @@
       const result = previousSelect.call(this, id, ...rest);
       if (insideSetObjects) return result;
 
+      const finalId = this.selectedId ?? id ?? null;
+      if (!looksCanonical(finalId)) {
+        // A placement tool/direct viewport call selected something outside the
+        // canonical group. Repair immediately, before Hammer's queued yellow
+        // overlay rebuild can draw one frame using the old multi-selection.
+        syncDirectSelection(this, finalId);
+        return result;
+      }
+
       queueMicrotask(() => {
-        // Canonical Scene/multi-select operations call viewport.select first and
-        // then synchronously emit eph-selection-changed. If that happened, the
-        // selection is already authoritative and must not be collapsed here.
+        // Canonical multi-select operations call viewport.select first and then
+        // synchronously emit eph-selection-changed. If the epoch changed, keep
+        // the group. If nothing followed this select(), it was a normal direct
+        // selection of an already-selected member and should become a single.
         if (selectionEpoch !== epochBefore) return;
-        const finalId = this.selectedId ?? id ?? null;
         syncDirectSelection(this, finalId);
       });
       return result;
