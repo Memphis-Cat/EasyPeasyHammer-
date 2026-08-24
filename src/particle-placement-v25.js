@@ -54,6 +54,13 @@
     const effectName = normalizeParticlePath(item?.path);
     if (!effectName || effectName === '.vpcf') return toast?.('Invalid particle resource');
 
+    // CS2's stock rain/snow particles have a native brush-volume controller.
+    // Keep them as one scalable EasyPeasyHammer object and export them as
+    // func_precipitation instead of a point info_particle_system.
+    if (window.EPH_WEATHER_VOLUME?.isWeatherPath?.(effectName)) {
+      return window.EPH_WEATHER_VOLUME.add({ ...item, path: effectName });
+    }
+
     pushHistory?.();
     const name = nextParticleName();
     const object = ensureObject(VMAP.addEntity(S.doc, {
@@ -96,9 +103,6 @@
     return object;
   }
 
-  // The asset-manager pass used to copy particle paths on double-click. Capture
-  // particle double-clicks first and turn them into real info_particle_system
-  // map entities instead.
   document.addEventListener('dblclick', event => {
     if (S?.assetTab !== 'particles') return;
     const card = event.target?.closest?.('#assetGrid .asset-card');
@@ -110,12 +114,15 @@
     addParticle(item);
   }, true);
 
-  // Make the interaction explicit in the UI without changing the asset grid.
   const annotateCards = () => {
     if (S?.assetTab !== 'particles') return;
     document.querySelectorAll('#assetGrid .asset-card').forEach(card => {
       const item = S.assetItems?.[Number(card.dataset.i)];
-      if (item) card.title = `${item.path || ''}\nDouble-click to place this particle in the map`;
+      if (!item) return;
+      const weather = window.EPH_WEATHER_VOLUME?.classify?.(item.path);
+      card.title = weather
+        ? `${item.path || ''}\nDouble-click to add a scalable ${weather.label.toLowerCase()} volume`
+        : `${item.path || ''}\nDouble-click to place this particle in the map`;
     });
   };
   const grid = document.getElementById('assetGrid');
@@ -130,5 +137,5 @@
     isParticleSystem,
     decorateParticleSystem
   };
-  console.info('[Particle Placement V25] Particle assets create unified info_particle_system entities.');
+  console.info('[Particle Placement V25] Generic particles use info_particle_system; CS2 rain/snow use native scalable precipitation volumes.');
 })();
