@@ -10,7 +10,6 @@
   const PICK_RADIUS_PX = 8;
   let installedViewport = null;
   let mirrorGroup = null;
-  let mirrorFrame = 0;
 
   const state = () => (typeof S !== 'undefined' ? S : window.S);
   const THREE = () => window.EPH_THREE || window.THREE;
@@ -242,7 +241,6 @@
       return true;
     }
 
-    if (mirrorFrame) cancelAnimationFrame(mirrorFrame);
     mirrorGroup?.parent?.remove?.(mirrorGroup);
 
     const root = new T.Group();
@@ -272,7 +270,7 @@
 
     const update = () => {
       if (mirrorGroup !== root || installedViewport !== viewport) return;
-      mirrorFrame = requestAnimationFrame(update);
+      requestAnimationFrame(update);
       removeLegacyNegativeRails(viewport);
 
       const target = viewport.transform?.object;
