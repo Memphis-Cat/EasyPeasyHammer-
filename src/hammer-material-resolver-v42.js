@@ -43,10 +43,10 @@
       const cache = viewport.materialTextureCache || new Map();
       viewport.materialTextureCache = cache;
       const wrapped = async function(resource) {
-        const key = normalize(resource).toLowerCase();
-        if (!key) return null;
-        if (!cache.has(key)) {
-          cache.set(key, (async () => {
+        const cacheKey = normalize(resource).toLowerCase();
+        if (!cacheKey) return null;
+        if (!cache.has(cacheKey)) {
+          const pending = (async () => {
             for (const candidate of candidates(resource)) {
               let result = null;
               try { result = await api.materialPreview(candidate); } catch {}
@@ -62,9 +62,16 @@
               return texture;
             }
             return null;
-          })());
+          })();
+          cache.set(cacheKey, pending);
         }
-        return cache.get(key);
+
+        const texture = await cache.get(cacheKey);
+        // Never make a startup race, temporary AssetHost delay, or transient
+        // decode failure permanent. Hammer resources can become available a few
+        // moments later, and every material/icon must then be allowed to retry.
+        if (!texture) cache.delete(cacheKey);
+        return texture;
       };
       wrapped.__ephHammerMaterialV42 = true;
       wrapped.__ephPrevious = viewport.loadMaterialTexture;
