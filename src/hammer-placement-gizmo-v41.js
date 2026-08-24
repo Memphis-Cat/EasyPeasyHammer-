@@ -124,9 +124,6 @@
     if (placedObjects.has(object) && !options.force) return object;
     placedObjects.add(object);
 
-    // The center of the 3D viewport is authoritative. Existing map geometry is
-    // raycast before the new object is positioned, with the new object's root
-    // explicitly excluded so it cannot place against itself.
     const hit = centerRay(vp, object.id);
     let position;
     if (hit) position = hit.point.clone().addScaledVector(hit.normal, EPSILON);
@@ -136,9 +133,6 @@
 
     if (hit) {
       settleOnPlane(object, hit, options.kind || '');
-      // Props swap their placeholder for the real Source 2 model asynchronously.
-      // Re-settle against the same surface after those swaps so a large model
-      // cannot suddenly clip through the wall/floor it was created on.
       if (object.type === 'prop' || object.ephWeatherVolume) {
         for (const delay of [60, 180, 500, 1200]) {
           setTimeout(() => {
@@ -215,9 +209,6 @@
       'entity', 'entity'
     ) || wrappedAddEntity;
 
-    // Part Numbering binds the button directly to its private creator. Rebind it
-    // to the final wrapped global creator so toolbar and keyboard creation use
-    // the exact same center-POV placement path.
     const partButton = document.getElementById('topAddPart');
     if (partButton && wrappedAddPart && partButton.onclick !== wrappedAddPart) partButton.onclick = wrappedAddPart;
 
@@ -258,9 +249,6 @@
 
     railGroup = new T.Group();
     railGroup.name = 'EPH_HammerNegativeAxisRails';
-    // Hammer shows the shaft continuing through the pivot opposite the arrow.
-    // Three.js TransformControls only supplies the positive arrow shaft, so add
-    // the missing negative half for all three axes without changing interaction.
     railGroup.add(makeAxisRail(T, new T.Vector3(1, 0, 0), 0xff3653));
     railGroup.add(makeAxisRail(T, new T.Vector3(0, 1, 0), 0x65d63d));
     railGroup.add(makeAxisRail(T, new T.Vector3(0, 0, 1), 0x287dff));
@@ -326,9 +314,5 @@
     if (checks >= 80) clearInterval(guard);
   }, 250);
 
-  // The browser automatically discards page-owned requestAnimationFrame callbacks
-  // when the renderer document unloads. Do not cancel a frame from a late pass:
-  // the editor integrity audit intentionally treats cancelAnimationFrame calls
-  // outside the core viewport/watchdog as possible render-loop sabotage.
   report('Center-POV surface placement enabled for new Parts, Props, Entities and particle/weather creation paths.');
 })();
