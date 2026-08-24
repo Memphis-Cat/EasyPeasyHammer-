@@ -96,6 +96,10 @@ check(projectDialog.includes('BASE_PASSES') && projectDialog.includes('LATE_PASS
 check(projectDialog.includes("'viewport-layout-integrity-v35.js'"), 'Zero-height viewport recovery must load in the deterministic runtime sequence.');
 check(projectDialog.indexOf("'viewport-layout-integrity-v35.js'") < projectDialog.indexOf("'render-core-integrity-v34.js'"), 'Viewport layout recovery must load before the final render integrity guard.');
 check(projectDialog.includes("'render-core-integrity-v34.js'"), 'Final render integrity pass must load after renderer enhancements.');
+check(projectDialog.includes("'render-frame-watchdog-v36.js'"), 'Actual WebGL frame verification must load in the deterministic runtime sequence.');
+check(projectDialog.indexOf("'render-core-integrity-v34.js'") < projectDialog.indexOf("'render-frame-watchdog-v36.js'"), 'Render Frame V36 must load after Render Core V34.');
+check(projectDialog.includes("'mesh-topology-repair-v36.js'"), 'Hammer T-junction topology repair must load with Negative Brush.');
+check(projectDialog.indexOf("'negative-brush-safety-v22.js'") < projectDialog.indexOf("'mesh-topology-repair-v36.js'"), 'Topology repair must be installed after the atomic Negative Brush guard.');
 
 const startupFix = read('src/startup-interaction-fix.js');
 check(!startupFix.includes("document.createElement('script')"), 'startup-interaction-fix must never start a second renderer script loader.');
@@ -124,6 +128,20 @@ for (const marker of ['validCameraState', 'ensureSize', 'ensureScene', 'ensureRo
 check(renderCore.includes('clientWidth'), 'Render Core must repair a viewport initially constructed while hidden.');
 check(renderCore.includes('Rebuilt missing render root'), 'Missing editor/render roots must be diagnosable.');
 
+const renderFrame = read('src/render-frame-watchdog-v36.js');
+for (const marker of ['stabilizeRenderer', 'forceFrame', 'renderer.info', 'setScissorTest', 'setViewport', 'stalled-render-loop', 'Actual WebGL frame verified after project load']) {
+  check(renderFrame.includes(marker), `Render Frame V36 is missing ${marker}.`);
+}
+check(renderFrame.includes("canvas.style.setProperty('opacity', '1', 'important')"), 'Render Frame V36 must recover a hidden/transparent WebGL canvas.');
+check(renderFrame.includes('renderableRoots(viewport) > 0') && renderFrame.includes('viewport.frameAll?.()'), 'Render Frame V36 must recover a valid-but-empty camera frustum after load.');
+
+const topologyRepair = read('src/mesh-topology-repair-v36.js');
+for (const marker of ['repairTjunctions', 'topologySummary', 'pointOnSegment', 'nonManifoldBoundaryVertices', 'T-junction conformance', '__ephMeshTopologyRepairV36']) {
+  check(topologyRepair.includes(marker), `Mesh Topology V36 is missing ${marker}.`);
+}
+check(topologyRepair.includes('throw error'), 'Mesh Topology V36 must preserve Hammer validation failures it cannot safely repair.');
+check(!topologyRepair.includes('VMAP.validate ='), 'Mesh Topology V36 must never weaken or replace VMAP validation.');
+
 const solidEntity = read('src/solid-entity-unified-v30.js');
 check(solidEntity.includes("TRIGGER_MATERIAL = 'materials/tools/toolstrigger.vmat'"), 'CS2 trigger volumes must keep the Hammer trigger material.');
 check(solidEntity.includes('part.collision !== true'), 'Trigger child meshes must retain default Hammer physics instead of physicsType none.');
@@ -145,9 +163,28 @@ const competingLoaderFiles = hazardSweepFiles.filter(file => {
   const name = rel(file);
   if (name === 'src/project-dialog.js') return false;
   const body = text(file);
-  return /createElement\(['"]script['"]\)/.test(body) && /(?:bundled\/|vmap-|large-map-|mesh-render-|entity-runtime-|editor-stability-)/.test(body);
+  return /createElement\(['"]script['"]\)/.test(body) && /(?:bundled\/|vmap-|large-map-|mesh-render-|entity-runtime-|editor-stability-|render-core-|render-frame-)/.test(body);
 });
 check(competingLoaderFiles.length === 0, `Competing renderer loaders found in: ${competingLoaderFiles.map(rel).join(', ')}`);
+
+const hiddenCanvasFiles = hazardSweepFiles.filter(file => {
+  const name = rel(file);
+  if (name === 'src/viewport-layout-integrity-v35.js' || name === 'src/render-frame-watchdog-v36.js') return false;
+  const body = text(file);
+  return /(?:threeViewport|renderer\.domElement|\bcanvas\b)[^\n]{0,180}(?:opacity\s*[:=]\s*0\b|visibility\s*[:=]\s*hidden\b|display\s*[:=]\s*none\b)/i.test(body);
+});
+check(hiddenCanvasFiles.length === 0, `WebGL canvas hiding found in: ${hiddenCanvasFiles.map(rel).join(', ')}`);
+
+const renderLoopSabotageFiles = hazardSweepFiles.filter(file => {
+  const name = rel(file);
+  if (name === 'src/viewport3d.js' || name === 'src/render-frame-watchdog-v36.js') return false;
+  const body = text(file);
+  return /renderer\.setAnimationLoop\s*\(\s*null\s*\)|renderer\.render\s*=|cancelAnimationFrame\s*\(/.test(body);
+});
+check(renderLoopSabotageFiles.length === 0, `Render-loop override/sabotage found in: ${renderLoopSabotageFiles.map(rel).join(', ')}`);
+
+const sceneHideFiles = hazardSweepFiles.filter(file => /(?:scene|objectGroup)\.visible\s*=\s*false/.test(text(file)));
+check(sceneHideFiles.length === 0, `Scene/object-root hiding found in: ${sceneHideFiles.map(rel).join(', ')}`);
 
 const pullBat = read('Pull_Latest.bat');
 check(pullBat.includes('npm install --ignore-scripts'), 'Pull_Latest.bat must refresh changed dependencies without running lifecycle scripts.');
@@ -157,5 +194,5 @@ if (failures.length) {
   for (const failure of failures) console.error(` - ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`Editor self-test passed. Scanned ${allTextFiles.length} project text/code files; renderer startup, canvas, camera, Three.js and large-map block invariants are guarded.`);
+  console.log(`Editor self-test passed. Scanned ${allTextFiles.length} project text/code files; renderer startup, canvas, camera, actual frame progress, Three.js, carve topology and large-map block invariants are guarded.`);
 }
