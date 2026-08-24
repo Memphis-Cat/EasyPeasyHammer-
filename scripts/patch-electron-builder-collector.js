@@ -24,16 +24,25 @@ let source = fs.readFileSync(target, 'utf8');
 // banners, prompts, warnings, etc.) contaminates the JSON stream and produces:
 //   No JSON content found in output
 // Traversal does not spawn the user's shell, so make it the first collector.
-const alreadyPatched = /const\s+pmApproaches\s*=\s*\[\s*[^\]]*PM\.TRAVERSAL\s*,\s*await\s+platformPackager\.getPackageManager\(\)\s*\]/m;
-const originalOrder = /(const\s+pmApproaches\s*=\s*)\[\s*await\s+platformPackager\.getPackageManager\(\)\s*,\s*([^\]\r\n]*PM\.TRAVERSAL)\s*\]/m;
+// 26.x releases have used both `packager` and `platformPackager` as the local
+// variable name, so accept either while still refusing to alter an unknown shape.
+const packageManagerCall = '(?:platformPackager|packager)\\.getPackageManager\\(\\)';
+const alreadyPatched = new RegExp(
+  `const\\s+pmApproaches\\s*=\\s*\\[\\s*[^\\]]*PM\\.TRAVERSAL\\s*,\\s*await\\s+${packageManagerCall}\\s*\\]`,
+  'm'
+);
+const originalOrder = new RegExp(
+  `(const\\s+pmApproaches\\s*=\\s*)\\[\\s*await\\s+((?:platformPackager|packager)\\.getPackageManager\\(\\))\\s*,\\s*([^\\]\\r\\n]*PM\\.TRAVERSAL)\\s*\\]`,
+  'm'
+);
 
 if (!alreadyPatched.test(source)) {
   const match = source.match(originalOrder);
   if (!match) {
-    const nearby = source.match(/.{0,100}pmApproaches.{0,220}/s)?.[0] || 'pmApproaches was not found';
+    const nearby = source.match(/.{0,120}pmApproaches.{0,260}/s)?.[0] || 'pmApproaches was not found';
     fail(`Could not recognize electron-builder's collector order. Refusing to patch an unknown layout.\n${nearby}`);
   }
-  source = source.replace(originalOrder, `$1[$2, await platformPackager.getPackageManager()]`);
+  source = source.replace(originalOrder, '$1[$3, await $2]');
   fs.writeFileSync(target, source, 'utf8');
 }
 
