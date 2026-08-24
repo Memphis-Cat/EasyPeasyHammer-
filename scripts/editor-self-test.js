@@ -129,11 +129,12 @@ check(renderCore.includes('clientWidth'), 'Render Core must repair a viewport in
 check(renderCore.includes('Rebuilt missing render root'), 'Missing editor/render roots must be diagnosable.');
 
 const renderFrame = read('src/render-frame-watchdog-v36.js');
-for (const marker of ['stabilizeRenderer', 'forceFrame', 'renderer.info', 'setScissorTest', 'setViewport', 'stalled-render-loop', 'Actual WebGL frame verified after project load']) {
+for (const marker of ['stabilizeRenderer', 'forceFrame', 'renderer.info', 'setScissorTest', 'setViewport', 'setRenderTarget', 'readPixels', 'framebufferSample', 'stalled-render-loop', 'Actual visible WebGL framebuffer verified after project load']) {
   check(renderFrame.includes(marker), `Render Frame V36 is missing ${marker}.`);
 }
 check(renderFrame.includes("canvas.style.setProperty('opacity', '1', 'important')"), 'Render Frame V36 must recover a hidden/transparent WebGL canvas.');
 check(renderFrame.includes('renderableRoots(viewport) > 0') && renderFrame.includes('viewport.frameAll?.()'), 'Render Frame V36 must recover a valid-but-empty camera frustum after load.');
+check(renderFrame.includes('scene.overrideMaterial = null'), 'Render Frame V36 must clear stale scene override materials.');
 
 const topologyRepair = read('src/mesh-topology-repair-v36.js');
 for (const marker of ['repairTjunctions', 'topologySummary', 'pointOnSegment', 'nonManifoldBoundaryVertices', 'T-junction conformance', '__ephMeshTopologyRepairV36']) {
@@ -141,6 +142,15 @@ for (const marker of ['repairTjunctions', 'topologySummary', 'pointOnSegment', '
 }
 check(topologyRepair.includes('throw error'), 'Mesh Topology V36 must preserve Hammer validation failures it cannot safely repair.');
 check(!topologyRepair.includes('VMAP.validate ='), 'Mesh Topology V36 must never weaken or replace VMAP validation.');
+
+const topologyTest = read('scripts/mesh-topology-self-test.js');
+check(topologyTest.includes('faces.length !== 41'), 'Carve topology regression must retain the 41-face BSP failure fixture.');
+check(topologyTest.includes('nonManifoldBoundaryVertices.length'), 'Carve regression must prove the fixture is broken before repair.');
+check(topologyTest.includes('after.boundaryEdges.length !== 0'), 'Carve regression must require a closed manifold result after repair.');
+
+const runBat = read('Run_Electron.bat');
+check(runBat.includes('mesh-topology-self-test.js'), 'Run_Electron.bat must execute the carve topology regression before launch.');
+check(String(pkg.scripts?.prebuild || '').includes('mesh-topology-self-test.js'), 'Packaged builds must execute the carve topology regression before packaging.');
 
 const solidEntity = read('src/solid-entity-unified-v30.js');
 check(solidEntity.includes("TRIGGER_MATERIAL = 'materials/tools/toolstrigger.vmat'"), 'CS2 trigger volumes must keep the Hammer trigger material.');
@@ -194,5 +204,5 @@ if (failures.length) {
   for (const failure of failures) console.error(` - ${failure}`);
   process.exitCode = 1;
 } else {
-  console.log(`Editor self-test passed. Scanned ${allTextFiles.length} project text/code files; renderer startup, canvas, camera, actual frame progress, Three.js, carve topology and large-map block invariants are guarded.`);
+  console.log(`Editor self-test passed. Scanned ${allTextFiles.length} project text/code files; renderer startup, visible framebuffer, camera, actual frame progress, Three.js, carve topology and large-map block invariants are guarded.`);
 }
