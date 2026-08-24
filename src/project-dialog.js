@@ -234,6 +234,7 @@ const LATE_PASSES = [
   'editor-correctness-v58.js',
   'editor-correctness-v59.js',
   'editor-correctness-v60.js',
+  'editor-geometry-v63.js',
   'startup-recents-v14.js'
 ];
 
