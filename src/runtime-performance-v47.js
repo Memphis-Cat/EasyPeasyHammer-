@@ -6,7 +6,6 @@
 
   const state = () => (typeof S !== 'undefined' ? S : window.S);
   const THREE = () => window.EPH_THREE || window.THREE;
-  const YELLOW = 0xffd84d;
   const SELECTION_FILL_OPACITY = 0.13;
 
   let assetBrowserActivated = false;
@@ -34,9 +33,6 @@
     if (assetStatusScheduled) return Promise.resolve(state()?.assetStatus || null);
     assetStatusScheduled = true;
 
-    // Map parsing, scene creation and the first visible WebGL frame get priority.
-    // The AssetHost can touch tens of thousands of Source 2 resources on a cold
-    // launch, so do not make it compete with the first map frame.
     setTimeout(() => {
       const start = () => execute();
       if (typeof requestIdleCallback === 'function') requestIdleCallback(start, { timeout: 1600 });
@@ -52,9 +48,6 @@
         const s = state();
         if (assetBrowserActivated) return runAssetStatusRefresh(true);
         if (s?.project) runAssetStatusRefresh(false);
-        // The startup/home screen never needs to index CS2 assets. Returning
-        // immediately is intentional; a loaded map or Asset Browser interaction
-        // starts the background refresh later.
         return Promise.resolve(s?.assetStatus || null);
       };
       wrapped.__ephNonBlockingV47 = true;
@@ -218,65 +211,23 @@
   function tuneSelectionOpacity(viewport = window.EPH3D || state()?.viewport) {
     const scene = viewport?.scene;
     if (!scene) return;
-    const root = scene.getObjectByName?.('EPH_HammerSelectionHighlightV46');
-    if (!root) return;
-    root.traverse?.(node => {
-      if (node.renderOrder !== 10030 || !node.material) return;
-      const materials = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of materials) {
-        material.transparent = true;
-        material.opacity = SELECTION_FILL_OPACITY;
-        material.depthTest = true;
-        material.depthWrite = false;
-        material.needsUpdate = true;
-      }
+    const roots = [];
+    scene.traverse?.(node => {
+      if (node?.name === 'EPH_HammerSelectionHighlightV46') roots.push(node);
     });
-  }
-
-  let dragTint = null;
-  function disposeDragTint() {
-    if (!dragTint) return;
-    dragTint.traverse?.(node => {
-      if (!node.userData?.ephDragTintMaterial || !node.material) return;
-      const materials = Array.isArray(node.material) ? node.material : [node.material];
-      materials.forEach(material => material?.dispose?.());
-    });
-    dragTint.parent?.remove?.(dragTint);
-    dragTint = null;
-  }
-
-  function makeDragTint(viewport) {
-    const T = THREE();
-    const root = viewport?.transform?.object;
-    if (!T || !root) return null;
-    const group = new T.Group();
-    group.name = 'EPH_SelectionDragTintV47';
-    group.userData.ephSelectionHighlight = true;
-    group.raycast = () => {};
-
-    const cloneSkeleton = window.EPH_THREE_HELPERS?.cloneSkeleton;
-    for (const child of [...root.children]) {
-      if (!child?.visible || child.userData?.ephSelectionHighlight || child.userData?.ephTransformGizmo || /^EPH_HammerSelection/i.test(String(child.name || ''))) continue;
-      let clone = null;
-      try { clone = cloneSkeleton ? cloneSkeleton(child) : child.clone(true); } catch { try { clone = child.clone(true); } catch {} }
-      if (!clone) continue;
-      clone.traverse?.(node => {
-        node.userData ||= {};
-        node.userData.ephSelectionHighlight = true;
-        node.raycast = () => {};
-        if (node.isMesh || node.isSkinnedMesh) {
-          node.material = new T.MeshBasicMaterial({ color: YELLOW, transparent: true, opacity: SELECTION_FILL_OPACITY, depthTest: true, depthWrite: false, side: T.DoubleSide, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-          node.userData.ephDragTintMaterial = true;
-          node.castShadow = false;
-          node.receiveShadow = false;
-          node.renderOrder = 10030;
-        } else if (node.isLight || node.isCamera) node.visible = false;
+    for (const root of roots) {
+      root.traverse?.(node => {
+        if (node.renderOrder !== 10030 || !node.material) return;
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        for (const material of materials) {
+          material.transparent = true;
+          material.opacity = SELECTION_FILL_OPACITY;
+          material.depthTest = true;
+          material.depthWrite = false;
+          material.needsUpdate = true;
+        }
       });
-      group.add(clone);
     }
-    if (!group.children.length) return null;
-    root.add(group);
-    return group;
   }
 
   function installSelectionPerformance() {
@@ -285,7 +236,16 @@
     if (!viewport?.transform || !selection || viewport.__ephSelectionPerformanceV47) return false;
     viewport.__ephSelectionPerformanceV47 = true;
 
-    const tuneLater = () => queueMicrotask(() => tuneSelectionOpacity(viewport));
+    let tuneQueued = false;
+    const tuneLater = () => {
+      if (tuneQueued) return;
+      tuneQueued = true;
+      requestAnimationFrame(() => {
+        tuneQueued = false;
+        tuneSelectionOpacity(viewport);
+      });
+    };
+
     for (const name of ['select', 'setObjects', 'updateObject']) {
       const previous = viewport[name];
       if (typeof previous !== 'function' || previous.__ephSelectionTuneV47) continue;
@@ -303,16 +263,18 @@
       viewport[name] = wrapped;
     }
 
+    // The previous implementation destroyed the normal selection overlay at
+    // drag start, deep-cloned the primary object into a temporary yellow mesh,
+    // then rebuilt the real overlays at drag end. That caused visible selection
+    // splits, allocations and stutter on every transform. The real Hammer
+    // overlays are already children of their selected roots, so they naturally
+    // follow transforms without any clone/rebuild cycle.
     viewport.transform.addEventListener('dragging-changed', event => {
-      if (event.value) {
-        selection.clear?.();
-        disposeDragTint();
-        dragTint = makeDragTint(viewport);
-      } else {
-        disposeDragTint();
+      window.EPH_MULTI_SELECTION?.updateHelpers?.();
+      if (!event.value) {
         queueMicrotask(() => {
-          selection.rebuild?.(viewport, true);
-          tuneSelectionOpacity(viewport);
+          selection.rebuild?.(viewport, false);
+          tuneLater();
         });
       }
     });
