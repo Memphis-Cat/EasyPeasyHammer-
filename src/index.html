@@ -9,25 +9,40 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="phase3.css" />
   <link rel="stylesheet" href="startup.css" />
+  <link rel="stylesheet" href="startup-modern-v53.css" />
 </head>
 <body>
 <div id="app">
-  <section id="startupScreen" class="startup-screen">
-    <div class="startup-card">
+  <section id="startupScreen" class="startup-screen eph-modern-startup-screen">
+    <div class="startup-card eph-modern-startup eph-recent-startup">
       <div class="brand-mark">EPH</div>
       <h1>EasyPeasyHammer</h1>
       <p class="startup-subtitle">CS2 map editor</p>
-      <div id="resumePanel" class="resume-panel hidden">
-        <div class="resume-label">Last map</div>
-        <div id="resumeName" class="resume-name">Untitled</div>
-        <div id="resumePath" class="resume-path"></div>
-        <button id="continueButton" class="primary-button large-button">Continue editing</button>
-      </div>
+      <section id="ephRecentMaps" class="eph-recent-maps">
+        <div class="eph-recent-maps-header">
+          <div class="eph-recent-maps-title">Recent projects</div>
+          <div class="eph-recent-maps-hint">Open a map to continue</div>
+        </div>
+        <div id="ephRecentMapsList" class="eph-recent-maps-list">
+          <div class="eph-recent-maps-empty">Loading recent maps…</div>
+        </div>
+      </section>
       <div class="startup-actions">
         <button id="openVmapButton" class="secondary-button large-button">Open existing .vmap</button>
         <button id="createProjectButton" class="secondary-button large-button">Create new project</button>
       </div>
-      <button id="forgetSessionButton" class="text-button hidden">Forget last map</button>
+    </div>
+
+    <!-- Compatibility-only anchors for the legacy renderer state API. They are
+         never visible; the modern Recent Projects surface above is authoritative. -->
+    <div class="startup-legacy-compat" hidden aria-hidden="true" style="display:none!important">
+      <div id="resumePanel" class="resume-panel hidden" hidden aria-hidden="true">
+        <div class="resume-label">Last map</div>
+        <div id="resumeName" class="resume-name">Untitled</div>
+        <div id="resumePath" class="resume-path"></div>
+        <button id="continueButton" class="primary-button large-button" type="button">Continue editing</button>
+      </div>
+      <button id="forgetSessionButton" class="text-button hidden" type="button" hidden aria-hidden="true">Forget last map</button>
     </div>
   </section>
 
