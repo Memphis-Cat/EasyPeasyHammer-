@@ -4,9 +4,7 @@
   if (window.__ephSelectionSyncV48) return;
   window.__ephSelectionSyncV48 = true;
 
-  let selectionEpoch = 0;
   let installedViewport = null;
-  window.addEventListener('eph-selection-changed', () => { selectionEpoch++; });
 
   const state = () => (typeof S !== 'undefined' ? S : window.S);
   const objectFor = id => state()?.objects?.find(object => object?.id === id) || null;
@@ -27,8 +25,6 @@
     } else {
       multi.set([], null, { selectViewport: false });
     }
-
-    // State ownership only: do not call viewport.select again from here.
     viewport.multiSelectedIds = [...(state()?.multiSelectedIds || [])];
   }
 
@@ -50,9 +46,8 @@
 
     let insideSetObjects = 0;
 
-    // setObjects has an explicit selectedId and multi-select-v22 owns its
-    // reconciliation. Suppress the select() call performed inside setObjects so
-    // it cannot collapse a valid group while a map/object list is rebuilding.
+    // setObjects has its own explicit selection reconciliation in multi-select.
+    // Its internal select() must never collapse an existing valid group.
     const previousSetObjects = viewport.setObjects;
     const wrappedSetObjects = function(...args) {
       insideSetObjects++;
@@ -66,27 +61,19 @@
 
     const previousSelect = viewport.select;
     const wrappedSelect = function(id, ...rest) {
-      const epochBefore = selectionEpoch;
       const result = previousSelect.call(this, id, ...rest);
       if (insideSetObjects) return result;
 
       const finalId = this.selectedId ?? id ?? null;
       if (!looksCanonical(finalId)) {
-        // A placement tool/direct viewport call selected something outside the
-        // canonical group. Repair immediately, before Hammer's queued yellow
-        // overlay rebuild can draw one frame using the old multi-selection.
+        // Placement tools and legacy code often assign S.selectedId and call
+        // viewport.select directly without touching multiSelectedIds. Repair
+        // that immediately so blue/yellow/tree selection cannot split apart.
         syncDirectSelection(this, finalId);
-        return result;
       }
-
-      queueMicrotask(() => {
-        // Canonical multi-select operations call viewport.select first and then
-        // synchronously emit eph-selection-changed. If the epoch changed, keep
-        // the group. If nothing followed this select(), it was a normal direct
-        // selection of an already-selected member and should become a single.
-        if (selectionEpoch !== epochBefore) return;
-        syncDirectSelection(this, finalId);
-      });
+      // If the id is already inside the canonical group, preserve the group.
+      // Normal user clicks are handled by select-click/multi-select, which
+      // explicitly collapse to one object when that is the intended action.
       return result;
     };
     copyMarkers(wrappedSelect, previousSelect);
