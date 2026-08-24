@@ -206,6 +206,8 @@ const LATE_PASSES = [
   'mesh-entity-collision-ownership-v32.js',
   'entity-transform-persistence-v33.js',
   'entity-model-basis-v41.js',
+  'hammer-material-resolver-v42.js',
+  'hammer-fgd-visuals-v42.js',
   'selection-surface-move-v39.js',
   'select-click-capture-v40.js',
   'hammer-placement-gizmo-v41.js',
