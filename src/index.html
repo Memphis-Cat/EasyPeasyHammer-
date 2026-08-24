@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data: blob:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' file: data: blob:; media-src 'self' file: data: blob:; connect-src 'self' http://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'" />
   <title>EasyPeasyHammer</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="phase3.css" />
@@ -155,7 +156,7 @@
       <div id="mapStatus">Map: Untitled.vmap</div><div class="status-divider"></div><div id="autosaveStatus">Autosave ready</div><div class="status-spacer"></div>
       <label class="status-select">Grid: <select id="gridSize"><option>8</option><option>16</option><option>32</option><option selected>64</option><option>128</option></select></label>
       <button id="snapButton" class="status-button active">Snap: On</button>
-      <label class="status-select">Angle Snap: <select id="angleSnap"><option>5°</option><option selected>15°</option><option>30°</option><option>45°</option></select></label>
+      <label class="status-select">Angle Snap: <select id="angleSnap"><option value="5">5°</option><option value="15" selected>15°</option><option value="30">30°</option><option value="45">45°</option></select></label>
       <button id="exportButton" class="status-button primary-status">Save VMAP</button>
       <button id="hammerButton" class="status-button">Open in Hammer</button>
       <span class="status-dot offline" title="Collaboration available"></span>
@@ -182,6 +183,7 @@
 <script src="vmap.js"></script>
 <script src="bundled/viewport3d.bundle.js"></script>
 <script src="renderer.js"></script>
+<script src="runtime-performance-v47.js"></script>
 <script src="theme.js"></script>
 <script src="project-dialog.js"></script>
 <script src="startup-interaction-fix.js"></script>
