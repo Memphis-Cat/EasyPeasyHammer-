@@ -213,6 +213,10 @@ const LATE_PASSES = [
   'select-click-capture-v40.js',
   'hammer-placement-gizmo-v41.js',
   'interaction-polish-v44.js',
+  // Final parity passes deliberately run after every entity/material/interaction
+  // override. Selection is last so it mirrors the exact final visual output.
+  'hammer-parity-v45.js',
+  'hammer-selection-v46.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
