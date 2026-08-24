@@ -203,7 +203,6 @@
   queueAssetSearch(true);
   loadExtension('part-numbering-v25.js');
   loadExtension('weather-volume-v27.js');
-  loadExtension('cs2-weather-runtime-v28.js');
   loadExtension('particle-placement-v25.js');
 
   window.addEventListener('eph-runtime-ready', () => {
