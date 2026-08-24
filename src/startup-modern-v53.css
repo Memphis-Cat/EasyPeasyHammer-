@@ -1,0 +1,432 @@
+/* byanca */
+:root {
+  --eph-ui-black: #050505;
+  --eph-ui-black-2: #0a0a0b;
+  --eph-ui-black-3: #101012;
+  --eph-ui-border: #232326;
+  --eph-ui-border-strong: #343438;
+  --eph-ui-white: #ffffff;
+  --eph-ui-muted: rgba(255,255,255,.62);
+  --eph-ui-muted-2: rgba(255,255,255,.38);
+  --eph-ui-orange: #fdaa15;
+  --eph-ui-blue: #315dfe;
+}
+
+#startupScreen.startup-screen {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 66px 54px 46px;
+  overflow: hidden;
+  color: var(--eph-ui-white);
+  background:
+    radial-gradient(circle at 12% 16%, rgba(49,93,254,.10), transparent 28%),
+    radial-gradient(circle at 88% 82%, rgba(253,170,21,.075), transparent 25%),
+    #050505;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", Inter, "SF Pro Text", "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#startupScreen.startup-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255,255,255,.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.016) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.68), transparent 90%);
+}
+
+#startupScreen .startup-card.eph-modern-startup {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  width: min(1160px, calc(100vw - 92px));
+  max-height: calc(100vh - 116px);
+  display: grid;
+  grid-template-columns: minmax(280px, .72fr) minmax(480px, 1.28fr);
+  grid-template-areas:
+    "title recent"
+    "subtitle recent"
+    "actions recent";
+  grid-template-rows: auto auto 1fr;
+  column-gap: clamp(44px, 6vw, 86px);
+  align-items: start;
+  padding: 42px;
+  overflow: hidden;
+  color: var(--eph-ui-white) !important;
+  background: rgba(7,7,8,.92) !important;
+  border: 1px solid rgba(255,255,255,.115) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 34px 100px rgba(0,0,0,.58) !important;
+  text-align: left;
+}
+
+#startupScreen .startup-card.eph-modern-startup::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 148px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--eph-ui-orange) 0 56%, var(--eph-ui-blue) 56% 100%);
+}
+
+#startupScreen .startup-card.eph-modern-startup::after {
+  content: "";
+  position: absolute;
+  left: calc(36% - 1px);
+  top: 42px;
+  bottom: 42px;
+  width: 1px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,.105) 13%, rgba(255,255,255,.105) 87%, transparent);
+}
+
+#startupScreen .brand-mark,
+#startupScreen #resumePanel,
+#startupScreen #forgetSessionButton {
+  display: none !important;
+}
+
+#startupScreen .startup-card.eph-modern-startup h1 {
+  grid-area: title;
+  align-self: end;
+  margin: 20px 0 0;
+  max-width: 360px;
+  color: #fff !important;
+  font-size: clamp(38px, 4.1vw, 58px);
+  font-weight: 730;
+  line-height: .98;
+  letter-spacing: -.052em;
+}
+
+#startupScreen .startup-card.eph-modern-startup h1::before {
+  content: "SOURCE 2 MAP EDITOR";
+  display: block;
+  margin: 0 0 15px 2px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1;
+  letter-spacing: .19em;
+  opacity: .72;
+}
+
+#startupScreen .startup-card.eph-modern-startup h1::after {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 4px;
+  margin-top: 20px;
+  border-radius: 20px;
+  background: var(--eph-ui-orange);
+  box-shadow: 58px 0 0 var(--eph-ui-blue);
+}
+
+#startupScreen .startup-subtitle {
+  grid-area: subtitle;
+  margin: 20px 0 0;
+  max-width: 310px;
+  color: rgba(255,255,255,.72) !important;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 1.55;
+  letter-spacing: -.005em;
+}
+
+#startupScreen .startup-subtitle::after {
+  content: "Build, edit and reopen Counter-Strike 2 maps without leaving your project workspace.";
+  display: block;
+  margin-top: 8px;
+  color: rgba(255,255,255,.46);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+#startupScreen .startup-actions {
+  grid-area: actions;
+  align-self: end;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  margin: 34px 0 0;
+  width: 100%;
+}
+
+#startupScreen .startup-actions button,
+#startupScreen .primary-button,
+#startupScreen .secondary-button {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -.005em;
+  transition: transform .12s ease, background .12s ease, border-color .12s ease, color .12s ease, box-shadow .12s ease;
+}
+
+#startupScreen #createProjectButton {
+  order: -1;
+  color: #050505 !important;
+  background: #fff !important;
+  border: 1px solid #fff !important;
+}
+
+#startupScreen #createProjectButton:hover {
+  transform: translateY(-1px);
+  background: #f2f2f2 !important;
+  box-shadow: 0 8px 30px rgba(255,255,255,.075);
+}
+
+#startupScreen #openVmapButton {
+  color: #fff !important;
+  background: #0c0c0e !important;
+  border: 1px solid #303034 !important;
+}
+
+#startupScreen #openVmapButton:hover {
+  transform: translateY(-1px);
+  background: #121214 !important;
+  border-color: var(--eph-ui-blue) !important;
+}
+
+#startupScreen .eph-recent-maps {
+  grid-area: recent;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 0 clamp(4px, 1vw, 12px);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+}
+
+#startupScreen .eph-recent-maps-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 13px;
+}
+
+#startupScreen .eph-recent-maps-title {
+  margin: 0;
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 690;
+  letter-spacing: -.012em;
+  text-transform: none;
+}
+
+#startupScreen .eph-recent-maps-title::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 8px;
+  vertical-align: 2px;
+  border-radius: 50%;
+  background: var(--eph-ui-blue);
+}
+
+#startupScreen .eph-recent-maps-hint {
+  color: rgba(255,255,255,.34);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+#startupScreen .eph-recent-maps-list {
+  min-height: 235px;
+  max-height: min(440px, calc(100vh - 260px));
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 2px 5px 2px 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #343438 transparent;
+}
+
+#startupScreen .eph-recent-maps-list::-webkit-scrollbar { width: 6px; }
+#startupScreen .eph-recent-maps-list::-webkit-scrollbar-thumb { background: #343438; border-radius: 10px; }
+
+#startupScreen .eph-recent-map-row {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 7px;
+}
+
+#startupScreen .eph-recent-map {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 60px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 11px 14px 11px 16px;
+  overflow: hidden;
+  color: #fff !important;
+  background: #0b0b0d !important;
+  border: 1px solid #222226 !important;
+  border-radius: 9px !important;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, transform .12s ease;
+}
+
+#startupScreen .eph-recent-map::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: rgba(253,170,21,.68);
+  opacity: .55;
+}
+
+#startupScreen .eph-recent-map:hover {
+  transform: translateX(2px);
+  background: #101013 !important;
+  border-color: rgba(49,93,254,.78) !important;
+}
+
+#startupScreen .eph-recent-map:hover::before { background: var(--eph-ui-blue); opacity: 1; }
+#startupScreen .eph-recent-map:disabled { opacity: .5; cursor: wait; transform: none; }
+
+#startupScreen .eph-recent-map-main { min-width: 0; }
+#startupScreen .eph-recent-map-name {
+  display: block;
+  overflow: hidden;
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: -.006em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#startupScreen .eph-recent-map-path {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: rgba(255,255,255,.42) !important;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#startupScreen .eph-recent-map-time {
+  color: rgba(255,255,255,.48) !important;
+  font-size: 9px;
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+#startupScreen .eph-recent-map-delete {
+  align-self: stretch;
+  min-width: 62px;
+  padding: 0 10px;
+  color: rgba(255,255,255,.55) !important;
+  background: #09090a !important;
+  border: 1px solid #242427 !important;
+  border-radius: 9px !important;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+
+#startupScreen .eph-recent-map-delete:hover {
+  color: #fff !important;
+  background: rgba(253,170,21,.08) !important;
+  border-color: rgba(253,170,21,.72) !important;
+}
+
+#startupScreen .eph-recent-maps-empty {
+  min-height: 154px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: rgba(255,255,255,.40) !important;
+  background: rgba(255,255,255,.018);
+  border: 1px dashed rgba(255,255,255,.14) !important;
+  border-radius: 10px !important;
+  font-size: 11px;
+  text-align: center;
+}
+
+#startupScreen button:focus-visible,
+.eph-delete-map-dialog button:focus-visible,
+.project-native-dialog button:focus-visible,
+.project-native-dialog input:focus-visible {
+  outline: 2px solid var(--eph-ui-blue) !important;
+  outline-offset: 2px;
+}
+
+.eph-delete-map-dialog,
+.project-native-dialog {
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", Inter, "SF Pro Text", "Segoe UI", Arial, sans-serif;
+}
+
+.eph-delete-map-dialog {
+  color: #fff !important;
+  background: #080809 !important;
+  border: 1px solid #29292d !important;
+  border-radius: 12px !important;
+}
+
+.eph-delete-map-card { background: #080809 !important; }
+.eph-delete-map-card h2,
+.eph-delete-map-name { color: #fff !important; }
+.eph-delete-map-path { color: rgba(255,255,255,.48) !important; }
+.eph-delete-map-warning {
+  color: rgba(255,255,255,.74) !important;
+  background: #0d0d0f !important;
+  border-color: #29292d !important;
+}
+.eph-delete-danger {
+  color: #050505 !important;
+  background: #fff !important;
+  border-color: #fff !important;
+}
+.eph-delete-danger:hover:not(:disabled) { background: #ededed !important; }
+
+@media (max-width: 900px) {
+  #startupScreen.startup-screen { padding: 54px 24px 28px; overflow: auto; place-items: start center; }
+  #startupScreen .startup-card.eph-modern-startup {
+    width: min(720px, calc(100vw - 32px));
+    max-height: none;
+    grid-template-columns: 1fr;
+    grid-template-areas: "title" "subtitle" "actions" "recent";
+    row-gap: 0;
+    padding: 30px;
+    overflow: visible;
+  }
+  #startupScreen .startup-card.eph-modern-startup::after { display: none; }
+  #startupScreen .startup-actions { grid-template-columns: 1fr 1fr; margin-bottom: 30px; }
+  #startupScreen .eph-recent-maps { padding-left: 0; }
+  #startupScreen .eph-recent-maps-list { max-height: 310px; }
+}
+
+@media (max-width: 560px) {
+  #startupScreen .startup-card.eph-modern-startup { padding: 24px; }
+  #startupScreen .startup-actions { grid-template-columns: 1fr; }
+  #startupScreen .eph-recent-map-row { grid-template-columns: minmax(0,1fr); }
+  #startupScreen .eph-recent-map-delete { min-height: 34px; }
+}
