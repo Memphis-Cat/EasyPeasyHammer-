@@ -178,7 +178,6 @@ const LATE_PASSES = [
   'mesh-render-fast-v27.js',
   'source2-coordinates-v23.js',
   'scale-tool-v21.js',
-  'scale-thin-fix-v38.js',
   'scale-legacy-disable-v21.js',
   'transform-precision-v23.js',
   'large-map-bootstrap-v21.js',
@@ -206,6 +205,7 @@ const LATE_PASSES = [
   'mesh-entity-transform-v31.js',
   'mesh-entity-collision-ownership-v32.js',
   'entity-transform-persistence-v33.js',
+  'selection-surface-move-v39.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
