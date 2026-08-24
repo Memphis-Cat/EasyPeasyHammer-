@@ -129,7 +129,12 @@ function registerAppLogService({ ipcMain, app }) {
       try {
         const result = await listener(event, ...args);
         const elapsed = Date.now() - start;
-        record(elapsed >= 750 ? 'warning' : 'normal', 'ipc', `← ${channel} (${elapsed} ms)`, stringify(result));
+        // AssetHost/FGD/map-local requests can legitimately perform a cold VPK or
+        // resource-cache warmup. They are background work in V47 and no longer block
+        // the editor startup, so warn only if that background work exceeds 5 seconds.
+        const backgroundChannel = /^(?:assets:|map-local:|entities:fgd-catalog)/i.test(String(channel));
+        const slowThreshold = backgroundChannel ? 5000 : 750;
+        record(elapsed >= slowThreshold ? 'warning' : 'normal', 'ipc', `← ${channel} (${elapsed} ms)`, stringify(result));
         return result;
       } catch (error) {
         record('error', 'ipc', `✕ ${channel} (${Date.now() - start} ms)`, error);
