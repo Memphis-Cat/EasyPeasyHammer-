@@ -155,6 +155,9 @@
     return t;
   }
 
+  // T-junction conformance: when an existing boundary vertex lies strictly
+  // inside another boundary edge, insert that same vertex into the edge's face
+  // loop. Hammer then sees shared edge topology instead of a hanging vertex.
   function repairTjunctions(vertices, sourceFaces) {
     if (!Array.isArray(vertices) || !vertices.length || !Array.isArray(sourceFaces) || !sourceFaces.length) {
       return { ok: false, changed: false, faces: sourceFaces || [], reason: 'missing-geometry' };
@@ -314,7 +317,7 @@
     wrapped.__ephPrevious = previous;
     VMAP.applyObjectToDocument = wrapped;
     installed = true;
-    report('normal', 'T-junction and face-winding conformance is active for topology-changing Hammer mesh writes.');
+    report('normal', 'T-junction conformance and face-winding conformance are active for topology-changing Hammer mesh writes.');
     return true;
   }
 
