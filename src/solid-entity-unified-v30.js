@@ -138,7 +138,6 @@
     if (VMAP.prepareForSave.__ephSolidEntityUnifiedV30) { wrappedPrepare = VMAP.prepareForSave; return true; }
     const raw = VMAP.prepareForSave.bind(VMAP);
     const wrapped = function(doc, objects) {
-      // Normalize before the existing save pipeline clones/applies the document.
       repairAll(doc, objects, { updateViewport: false, markDirty: false });
       return raw(doc, objects);
     };
@@ -265,7 +264,18 @@
     }
     helper.visible = !helper.box.isEmpty();
     if (vp.selectionBox) vp.selectionBox.visible = false;
-    vp.transform?.detach?.();
+
+    // Mesh Entity Transform V31 deliberately attaches TransformControls to the
+    // entity's owned Part while keeping the entity wrapper logically selected.
+    // The old selection-helper code detached TransformControls every time the
+    // box refreshed. objectChange -> updateSelectionBox therefore detached the
+    // gizmo in the middle of move/rotate/scale drags, which made every brush
+    // entity (buyzones, bombsites, triggers, etc.) feel jumpy or stop responding.
+    // Never detach an active/owned child transform. Only clear a stale generic
+    // wrapper gizmo when no entity transform is in progress.
+    const transformTool = ['move', 'rotate', 'scale'].includes(String(vp.tool || ''));
+    const ownsActiveTransform = transformTool && roots.includes(vp.transform?.object);
+    if (!vp.transform?.dragging && !ownsActiveTransform) vp.transform?.detach?.();
     return helper.visible;
   }
 
