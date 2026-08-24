@@ -38,11 +38,18 @@
   }
 
   function updateBlueHelpers(viewport) {
-    viewport?.scene?.traverse?.(node => {
-      if (node?.userData?.ephMultiSelection) {
-        try { node.update?.(); } catch {}
-      }
-    });
+    const fast = window.EPH_MULTI_SELECTION?.updateHelpers;
+    if (typeof fast === 'function') {
+      try { fast(); } catch {}
+      return;
+    }
+
+    // Startup fallback only. V49 replaces this with a direct helper map so a
+    // transform never has to walk the entire Three.js scene.
+    for (const node of viewport?.scene?.children || []) {
+      if (!node?.userData?.ephMultiSelection) continue;
+      try { node.update?.(); } catch {}
+    }
   }
 
   function selected(id) {
@@ -61,8 +68,6 @@
 
     let insideSetObjects = 0;
 
-    // setObjects has its own explicit selection reconciliation in multi-select.
-    // Its internal select() must never collapse an existing valid group.
     const previousSetObjects = viewport.setObjects;
     const wrappedSetObjects = function(...args) {
       insideSetObjects++;
@@ -81,9 +86,6 @@
 
       const finalId = this.selectedId ?? id ?? null;
       if (!looksCanonical(finalId)) {
-        // Placement tools and legacy code often assign S.selectedId and call
-        // viewport.select directly without touching multiSelectedIds. Repair
-        // that immediately so blue/yellow/tree selection cannot split apart.
         syncDirectSelection(this, finalId);
       }
       return result;
@@ -93,13 +95,18 @@
     wrappedSelect.__ephPrevious = previousSelect;
     viewport.select = wrappedSelect;
 
-    // BoxHelper does not update itself when its target moves/scales. Keeping the
-    // blue helpers live here fixes the old "yellow moved but blue stayed behind"
-    // bug during normal one-object transforms as well as multi-transforms.
     if (viewport.transform) {
-      viewport.transform.addEventListener?.('objectChange', () => updateBlueHelpers(viewport));
-      viewport.transform.addEventListener?.('change', () => updateBlueHelpers(viewport));
-      viewport.transform.addEventListener?.('dragging-changed', () => updateBlueHelpers(viewport));
+      let helperFrame = 0;
+      const schedule = () => {
+        if (helperFrame) return;
+        helperFrame = requestAnimationFrame(() => {
+          helperFrame = 0;
+          updateBlueHelpers(viewport);
+        });
+      };
+      viewport.transform.addEventListener?.('objectChange', schedule);
+      viewport.transform.addEventListener?.('change', schedule);
+      viewport.transform.addEventListener?.('dragging-changed', schedule);
     }
 
     if (typeof viewport.updateObject === 'function') {
@@ -115,13 +122,24 @@
       viewport.updateObject = wrappedUpdateObject;
     }
 
-    console.info('[Selection Sync V48] Direct, Scene and multi-selection state plus live blue bounds now share one canonical selection.');
+    console.info('[Selection Sync V48] Direct, Scene and multi-selection state use frame-batched helper updates.');
     return true;
+  }
+
+  function loadFinalStabilityPass() {
+    if (window.__ephEditorInteractionStabilityV49 || document.querySelector('script[data-eph-v49]')) return;
+    const script = document.createElement('script');
+    script.src = 'editor-interaction-stability-v49.js';
+    script.async = false;
+    script.dataset.ephV49 = '1';
+    script.onerror = () => console.error('[Selection Sync V48] Could not load editor-interaction-stability-v49.js');
+    document.body.appendChild(script);
   }
 
   install();
   window.addEventListener('eph3d-ready', event => install(event.detail));
   window.addEventListener('eph-runtime-ready', () => install(), { once: true });
+  queueMicrotask(loadFinalStabilityPass);
 
   window.EPH_SELECTION_SYNC_V48 = { install };
 })();
