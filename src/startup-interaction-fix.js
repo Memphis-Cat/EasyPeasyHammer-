@@ -21,20 +21,6 @@
       refinement.href = 'startup-modern-v54.css';
       document.head.appendChild(refinement);
     }
-    if (!document.querySelector('link[href="editor-modern-v55.css"]')) {
-      const editorStyle = document.createElement('link');
-      editorStyle.id = 'ephEditorModernV55Style';
-      editorStyle.rel = 'stylesheet';
-      editorStyle.href = 'editor-modern-v55.css';
-      document.head.appendChild(editorStyle);
-    }
-    if (!document.querySelector('script[src="editor-modern-v55.js"]')) {
-      const editorRuntime = document.createElement('script');
-      editorRuntime.id = 'ephEditorModernV55Runtime';
-      editorRuntime.src = 'editor-modern-v55.js';
-      editorRuntime.defer = true;
-      document.head.appendChild(editorRuntime);
-    }
 
     const screen = document.getElementById('startupScreen');
     const card = screen?.querySelector('.startup-card');
@@ -148,8 +134,9 @@
     installRuntimeGate();
   }
 
-  // project-dialog.js is the only runtime script loader. This file owns the
-  // immediate startup shell, input/window interaction and readiness gate.
+  // project-dialog.js remains the runtime pass loader. This file owns only the
+  // startup shell, input/window interaction and readiness gate. Editor V55 is
+  // loaded directly by index.html so it cannot race or double-install.
   repair();
   requestAnimationFrame(repair);
   setTimeout(repair, 100);
