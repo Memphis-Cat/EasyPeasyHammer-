@@ -142,6 +142,7 @@
   }
 
   function stabilizeEntityRenderer() {
+    if (document.documentElement.dataset.ephRuntimeReady !== '1') return false;
     const viewport = window.EPH3D || state()?.viewport;
     const T = THREE();
     if (!viewport?.createEntityMarker || !T) return false;
@@ -244,6 +245,9 @@
       const previous = viewport[name];
       if (typeof previous !== 'function' || previous.__ephSelectionTuneV47) continue;
       const wrapped = function(...args) {
+        if (name === 'setObjects') {
+          try { this.resize?.(); } catch {}
+        }
         const result = previous.apply(this, args);
         tuneLater();
         return result;
@@ -282,7 +286,10 @@
 
   installAngleUiFix();
   window.addEventListener('eph-fgd-catalog-ready', () => sanitizeFgdInputTypes());
-  window.addEventListener('eph3d-ready', () => queueMicrotask(finalInstall));
+  window.addEventListener('eph3d-ready', () => queueMicrotask(() => {
+    installAngleUiFix();
+    installLazyAssetBrowser();
+  }));
   window.addEventListener('eph-runtime-ready', () => queueMicrotask(finalInstall), { once: true });
   queueMicrotask(() => {
     installAngleUiFix();
