@@ -160,6 +160,10 @@ const BASE_PASSES = [
 ];
 
 const LATE_PASSES = [
+  // Must run before any of the old compatibility passes that installed
+  // temporary 250 ms guards. It suppresses only the known redundant guards
+  // during deterministic startup, then restores the browser timer API.
+  'performance-preflight-v51.js',
   'vmap-import-fidelity-v27.js',
   'large-map-stream-v21.js',
   'large-map-spatial-v19.js',
@@ -171,6 +175,13 @@ const LATE_PASSES = [
   'fgd-editor-model-guard-v18.js',
   'entity-fidelity-v18.js',
   'asset-manager-v24.js',
+  // Asset Manager extensions used to inject their own <script> elements. Keep
+  // them in one explicit sequence so startup cannot race or silently omit them.
+  'part-numbering-v25.js',
+  'prop-fidelity-v37.js',
+  'weather-volume-v27.js',
+  'weather-audio-v37.js',
+  'particle-placement-v25.js',
   'map-local-assets-v19.js',
   'map-local-fast-v21.js',
   'render-performance-v20.js',
@@ -220,6 +231,9 @@ const LATE_PASSES = [
   'selection-sync-v48.js',
   'editor-interaction-stability-v49.js',
   'editor-interaction-consistency-v50.js',
+  // V51 owns the final fast paths (Scene, Properties, transform persistence,
+  // opacity and final entity/prop renderer choices) after all older wrappers.
+  'editor-performance-integrity-v51.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
