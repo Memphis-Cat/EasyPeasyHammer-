@@ -11,13 +11,14 @@
   const THREE = () => window.EPH_THREE || window.THREE;
   const objectFor = id => state()?.objects?.find(object => object?.id === id) || null;
 
-  let blueHelpers = new Map();
+  const blueHelpers = new Map();
   let blueFrame = 0;
   let treeFrame = 0;
   let toolbarFrame = 0;
   let voidPress = null;
   let treeObserver = null;
   let toolbarObserver = null;
+  let installedViewport = null;
 
   function ensureStyle() {
     if (document.getElementById('ephInteractionStabilityV49Style')) return;
@@ -60,6 +61,7 @@
 
   function selectedIds() {
     const s = state();
+    const vp = viewport();
     const result = [];
     const add = id => {
       if (!id || result.includes(id)) return;
@@ -67,8 +69,10 @@
       if (!object || ['world', 'folder'].includes(object.type) || object.visible === false) return;
       result.push(id);
     };
+    try { for (const id of window.EPH_MULTI_SELECTION?.ids?.() || []) add(id); } catch {}
     for (const id of Array.isArray(s?.multiSelectedIds) ? s.multiSelectedIds : []) add(id);
-    add(s?.selectedId);
+    for (const id of Array.isArray(vp?.multiSelectedIds) ? vp.multiSelectedIds : []) add(id);
+    add(s?.selectedId || vp?.selectedId);
     return result;
   }
 
@@ -134,10 +138,36 @@
   }
 
   function clearBlueHelpers() {
-    if (blueFrame) cancelAnimationFrame(blueFrame);
-    blueFrame = 0;
+    // Do not stop the application's animation machinery. A queued helper frame
+    // is harmless: selection is already empty, so it becomes a no-op cleanup.
     for (const entry of blueHelpers.values()) disposeHelper(entry);
     blueHelpers.clear();
+  }
+
+  function visibleTreeObjects() {
+    const s = state();
+    if (!s) return [];
+    const query = String(document.getElementById('sceneSearch')?.value || '').trim().toLowerCase();
+    const byParent = new Map();
+    for (const object of s.objects || []) {
+      const parent = object.parent == null ? null : object.parent;
+      if (!byParent.has(parent)) byParent.set(parent, []);
+      byParent.get(parent).push(object);
+    }
+    const children = id => byParent.get(id) || [];
+    const include = object => {
+      const kids = children(object.id);
+      return !query || String(object.name || '').toLowerCase().includes(query)
+        || kids.some(child => String(child.name || '').toLowerCase().includes(query));
+    };
+    const result = [];
+    const walk = object => {
+      if (!include(object)) return;
+      result.push(object);
+      if (object.expanded) for (const child of children(object.id)) walk(child);
+    };
+    for (const object of byParent.get(null) || []) walk(object);
+    return result;
   }
 
   function syncSceneTreeNow() {
@@ -146,17 +176,21 @@
     const tree = document.getElementById('sceneTree');
     if (!s || !tree) return;
     const selected = new Set(selectedIds());
+    const visible = visibleTreeObjects();
+    const rows = [...tree.querySelectorAll('.tree-row')];
 
-    for (const row of tree.querySelectorAll('.tree-row[data-object-id]')) {
-      const id = row.dataset.objectId;
-      const object = objectFor(id);
-      const isSelected = selected.has(id);
-      const primary = id === s.selectedId;
+    rows.forEach((row, index) => {
+      const object = visible[index] || null;
+      if (object?.id) row.dataset.objectId = object.id;
+      else delete row.dataset.objectId;
+      const id = object?.id || '';
+      const isSelected = Boolean(id && selected.has(id));
+      const primary = Boolean(id && id === s.selectedId);
       row.classList.toggle('selected', primary);
       row.classList.toggle('eph-multi-selected', isSelected);
       row.classList.toggle('eph-multi-primary', isSelected && primary);
       row.classList.toggle('eph-negative-part-row', Boolean(object?.type === 'part' && object.ephNegative));
-    }
+    });
   }
 
   function scheduleSceneTree() {
@@ -173,12 +207,6 @@
       try { multi.clear(); } catch {}
     } else {
       try { vp?.select?.(null, false); } catch {}
-      if (s) {
-        s.selectedId = null;
-        s.multiSelectedIds = [];
-        s.selectedFaces = new Set();
-        s.subSelection = null;
-      }
     }
 
     if (vp) {
@@ -240,7 +268,6 @@
       if (vp.transform?.dragging || vp.transform?.axis) return;
       if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 5) return;
       if (hitAt(event)) return;
-
       event.preventDefault();
       event.stopImmediatePropagation();
       clearEverything();
@@ -279,12 +306,9 @@
     const row = document.querySelector('.toolbar-row');
     if (!row) return;
     for (const button of row.querySelectorAll('.tool-mode[data-tool]')) {
-      button.style.removeProperty('display');
-      button.style.removeProperty('visibility');
+      if (button.style.display === 'none') button.style.removeProperty('display');
+      if (button.style.visibility === 'hidden') button.style.removeProperty('visibility');
     }
-    // A flex-layout read after dynamic Move/Rotate/Scale controls are inserted
-    // keeps Chromium from retaining a stale clipped toolbar width.
-    void row.offsetWidth;
   }
 
   function scheduleToolbar() {
@@ -296,23 +320,23 @@
     const tree = document.getElementById('sceneTree');
     if (tree && !treeObserver) {
       treeObserver = new MutationObserver(scheduleSceneTree);
-      treeObserver.observe(tree, { childList: true, subtree: true });
+      treeObserver.observe(tree, { childList: true });
     }
     const toolbar = document.querySelector('.toolbar-row');
     if (toolbar && !toolbarObserver) {
       toolbarObserver = new MutationObserver(scheduleToolbar);
-      toolbarObserver.observe(toolbar, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+      // Child changes are sufficient. Watching class/style attributes caused a
+      // feedback loop while transform controls were being updated.
+      toolbarObserver.observe(toolbar, { childList: true, subtree: true });
     }
   }
 
   function installViewportEvents() {
     const vp = viewport();
-    if (!vp?.transform || vp.__ephInteractionStabilityV49) return;
-    vp.__ephInteractionStabilityV49 = true;
-
-    const update = () => scheduleBlueHelpers();
+    if (!vp?.transform || installedViewport === vp) return;
+    installedViewport = vp;
+    const update = scheduleBlueHelpers;
     vp.transform.addEventListener?.('objectChange', update);
-    vp.transform.addEventListener?.('change', update);
     vp.transform.addEventListener?.('dragging-changed', event => {
       scheduleBlueHelpers();
       if (!event.value) queueMicrotask(() => window.EPH_HAMMER_SELECTION_V46?.rebuild?.(vp, false));
@@ -341,12 +365,12 @@
   window.addEventListener('resize', scheduleToolbar, { passive: true });
 
   install();
-  [250, 900, 2200].forEach(delay => setTimeout(install, delay));
+  setTimeout(install, 500);
 
   window.EPH_INTERACTION_STABILITY_V49 = {
     install,
     clearSelection: clearEverything,
     refreshSelection: () => { scheduleSceneTree(); scheduleBlueHelpers(); },
   };
-  console.info('[Interaction Stability V49] Void deselection, unified blue/yellow selection, persistent Negative names, lightweight selection updates and toolbar integrity installed.');
+  console.info('[Interaction Stability V49] Self-test-safe selection, lightweight helper updates, void deselection, negative names and toolbar integrity installed.');
 })();
