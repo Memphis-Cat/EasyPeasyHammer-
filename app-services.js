@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Worker } = require('worker_threads');
 const { spawn } = require('child_process');
 const { registerCollaboration } = require('./collab-network');
 
@@ -184,21 +185,52 @@ function listRecentProjects(app, limit = 24) {
   }));
 }
 
-function stripRedundantRecentVmap(project, uiState) {
-  if (!uiState || typeof uiState !== 'object') return uiState || null;
-  if (typeof uiState.vmapText !== 'string' || !uiState.vmapText) return uiState;
+function readRecentPayloadOffThread(sessionFile, targetPath) {
+  return new Promise(resolve => {
+    if (!sessionFile || !fs.existsSync(sessionFile)) { resolve(null); return; }
 
-  const ui = { ...uiState };
-  try {
-    if (ui.dirty === false) {
-      delete ui.vmapText;
-      return ui;
-    }
+    const workerSource = `
+      const { parentPort, workerData } = require('worker_threads');
+      const fs = require('fs');
+      try {
+        const payload = JSON.parse(fs.readFileSync(workerData.sessionFile, 'utf8'));
+        const ui = payload && payload.uiState && typeof payload.uiState === 'object'
+          ? { ...payload.uiState }
+          : null;
+        if (ui && typeof ui.vmapText === 'string' && ui.vmapText) {
+          if (ui.dirty === false) {
+            delete ui.vmapText;
+          } else {
+            try {
+              const disk = fs.readFileSync(workerData.targetPath, 'utf8');
+              if (disk === ui.vmapText) delete ui.vmapText;
+            } catch {}
+          }
+        }
+        if (payload) payload.uiState = ui;
+        parentPort.postMessage({ ok: true, payload });
+      } catch (error) {
+        parentPort.postMessage({ ok: false, error: error && error.message ? error.message : String(error) });
+      }
+    `;
 
-    const disk = fs.readFileSync(project.vmapPath, 'utf8');
-    if (disk === ui.vmapText) delete ui.vmapText;
-  } catch {}
-  return ui;
+    let settled = false;
+    const worker = new Worker(workerSource, {
+      eval: true,
+      workerData: { sessionFile, targetPath },
+    });
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.terminate().catch?.(() => {});
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), 30000);
+    worker.once('message', message => finish(message?.ok ? message.payload || null : null));
+    worker.once('error', () => finish(null));
+    worker.once('exit', code => { if (code !== 0) finish(null); });
+  });
 }
 
 async function openRecentProject(app, vmapPath) {
@@ -207,16 +239,11 @@ async function openRecentProject(app, vmapPath) {
   if (path.extname(targetPath).toLowerCase() !== '.vmap' || !fs.existsSync(targetPath)) return null;
 
   // Opening one recent map used to call recentProjectSessions(), synchronously
-  // reading and JSON-parsing every autosave. Because session.json can contain an
-  // entire VMAP snapshot, a single click could block Electron's main process for
-  // seconds. Resolve the deterministic project-key folder and read only the map
-  // the user actually clicked.
+  // reading and JSON-parsing every autosave. session.json can contain an entire
+  // VMAP snapshot, so this froze Electron's main process. Resolve only the map
+  // that was clicked and parse/compare the old snapshot in a worker thread.
   const directFile = directRecentSessionFile(app, targetPath);
-  let payload = null;
-  try {
-    const text = await fs.promises.readFile(directFile, 'utf8');
-    payload = JSON.parse(text);
-  } catch {}
+  let payload = await readRecentPayloadOffThread(directFile, targetPath);
 
   if (!payload?.project) {
     // Compatibility fallback for unusual old sessions whose folder key predates
@@ -230,7 +257,7 @@ async function openRecentProject(app, vmapPath) {
   const project = { ...payload.project, vmapPath: targetPath, openedAt: new Date().toISOString() };
   return {
     project,
-    uiState: stripRedundantRecentVmap(project, payload.uiState || null),
+    uiState: payload.uiState || null,
     savedAt: payload.savedAt || null,
   };
 }
