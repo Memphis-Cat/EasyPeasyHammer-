@@ -14,6 +14,11 @@ node scripts\v51-runtime-self-test.js
 if errorlevel 1 goto error
 
 echo.
+echo Running deep map asset self-test...
+node scripts\deep-asset-self-test.js
+if errorlevel 1 goto error
+
+echo.
 echo Running editor security/performance self-test...
 node scripts\editor-self-test.js
 if errorlevel 1 goto error
