@@ -11,6 +11,23 @@
     return path;
   }
 
+  function isParticleSystem(object) {
+    return String(object?.className || '').trim().toLowerCase() === 'info_particle_system';
+  }
+
+  function decorateParticleSystem(object) {
+    if (!isParticleSystem(object)) return object;
+    object.ephParticleSystem = true;
+    object.entityProperties ||= {};
+    const effectName = normalizeParticlePath(object.entityProperties.effect_name || object.particleResource || '');
+    if (effectName && effectName !== '.vpcf') {
+      object.entityProperties.effect_name = effectName;
+      object.particleResource = effectName;
+    }
+    object.entityProperties.start_active ??= '1';
+    return object;
+  }
+
   function nextParticleName() {
     let highest = 0;
     for (const object of S?.objects || []) {
@@ -59,9 +76,9 @@
     object.type = 'entity';
     object.className = 'info_particle_system';
     object.name = name;
-    object.entityProperties ||= {};
+    decorateParticleSystem(object);
     object.entityProperties.effect_name = effectName;
-    object.entityProperties.start_active = '1';
+    object.particleResource = effectName;
     addMapAssetReference(effectName);
     VMAP.applyObjectToDocument?.(S.doc, object);
 
@@ -105,6 +122,13 @@
   if (grid) new MutationObserver(annotateCards).observe(grid, { childList: true });
   queueMicrotask(annotateCards);
 
-  window.EPH_PARTICLE_PLACEMENT = { add: addParticle, normalizeParticlePath };
-  console.info('[Particle Placement V25] Particle assets now create info_particle_system entities.');
+  for (const object of S?.objects || []) decorateParticleSystem(object);
+
+  window.EPH_PARTICLE_PLACEMENT = {
+    add: addParticle,
+    normalizeParticlePath,
+    isParticleSystem,
+    decorateParticleSystem
+  };
+  console.info('[Particle Placement V25] Particle assets create unified info_particle_system entities.');
 })();
