@@ -35,6 +35,27 @@
     return object.id;
   }
 
+  function bindKnownSurfaceToggle(viewport) {
+    // editor-ux-v7 uses this exact property/key. Force Surface only as the
+    // startup/default value; the user can still click the Surface button off.
+    if (viewport) viewport.surfaceSnap = true;
+    localStorage.setItem('eph-surface-snap', '1');
+    surfaceEnabled = true;
+    const button = document.getElementById('ephSurfaceSnap');
+    if (!button) return;
+    button.classList.add('active');
+    button.title = 'Keep moved objects on surfaces and stop them at floors, walls and ceilings';
+    if (button.dataset.ephSurfaceMoveV39 === '1') return;
+    button.dataset.ephSurfaceMoveV39 = '1';
+    button.addEventListener('click', () => {
+      queueMicrotask(() => {
+        surfaceEnabled = viewport?.surfaceSnap !== false;
+        localStorage.setItem('eph-surface-snap', surfaceEnabled ? '1' : '0');
+        button.classList.toggle('active', surfaceEnabled);
+      });
+    });
+  }
+
   function surfaceControlCandidate(select) {
     if (!select?.options?.length) return null;
     const options = [...select.options];
@@ -49,23 +70,21 @@
     const option = surfaceControlCandidate(select);
     if (!option) return;
     select.dataset.ephSurfaceMoveV39 = '1';
-
-    // Surface is the default for every fresh editor runtime. After that the user
-    // can still deliberately choose another mode for the current session.
     select.value = option.value;
     surfaceEnabled = true;
     try { select.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
-
     select.addEventListener('change', () => {
       const selected = select.options?.[select.selectedIndex];
       surfaceEnabled = /surface/i.test(`${select.value} ${selected?.textContent || ''}`);
     });
   }
 
-  function installSurfaceDefault() {
+  function installSurfaceDefault(viewport = window.EPH3D || state()?.viewport) {
+    bindKnownSurfaceToggle(viewport);
     document.querySelectorAll('select').forEach(bindSurfaceControl);
     if (surfaceObserver) return;
     surfaceObserver = new MutationObserver(records => {
+      bindKnownSurfaceToggle(window.EPH3D || state()?.viewport);
       for (const record of records) {
         for (const node of record.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -160,9 +179,6 @@
       const id = hitSelectable(viewport, event);
       if (!id) return;
 
-      // Run before the legacy canvas pointer-up handler. This prevents an older
-      // handler from clearing the selection after we correctly hit a prop,
-      // entity, particle helper, or mesh wrapper.
       event.preventDefault();
       event.stopImmediatePropagation();
       viewport.select?.(id, true);
@@ -232,8 +248,6 @@
 
     const fromOffset = from.clone().sub(to);
     const startBox = translatedBox(candidateBox, fromOffset);
-    // If an imported/old object already overlaps geometry, do not trap it. Let
-    // the user drag it out; collision stopping resumes on the next safe frame.
     if (intersectsAny(startBox, obstacles)) return to;
     if (!intersectsAny(candidateBox, obstacles)) return to;
 
@@ -255,8 +269,6 @@
       safeT = t;
     }
 
-    // Resolve the contact to sub-unit precision. The result is the closest safe
-    // transform before the floor, wall, ceiling, or other solid surface.
     for (let iteration = 0; iteration < 12; iteration++) {
       const mid = (safeT + hitT) * 0.5;
       const sample = from.clone().addScaledVector(direction, mid);
@@ -293,9 +305,6 @@
       const safe = clampedMovePosition(this, session.id, session.lastSafe, candidate);
       if (safe.distanceToSquared(candidate) > 1e-10) {
         root.position.copy(safe);
-        // Re-run the existing authoritative transform chain once with the
-        // corrected position so mesh entities, point entities and persistence
-        // wrappers all receive the same wall-stopped transform.
         raw(doCommit, ...rest);
       }
       session.lastSafe.copy(root.position);
@@ -318,7 +327,7 @@
   }
 
   function install(viewport = window.EPH3D || state()?.viewport) {
-    installSurfaceDefault();
+    installSurfaceDefault(viewport);
     if (!viewport?.renderer?.domElement || !viewport?.objectRoots) return false;
     installedViewport = viewport;
     installClickSelection(viewport);
@@ -336,13 +345,19 @@
     checks++;
     const viewport = window.EPH3D || state()?.viewport;
     if (viewport && (!installedViewport || installedViewport !== viewport || !viewport.syncSelectedFromRoot?.__ephSurfaceMoveV39)) install(viewport);
-    installSurfaceDefault();
+    installSurfaceDefault(viewport);
     if (checks >= 48) clearInterval(guard);
   }, 250);
 
   window.EPH_SURFACE_MOVE_V39 = {
     enabled: () => surfaceEnabled,
-    setEnabled: value => { surfaceEnabled = Boolean(value); },
+    setEnabled: value => {
+      surfaceEnabled = Boolean(value);
+      const viewport = window.EPH3D || state()?.viewport;
+      if (viewport) viewport.surfaceSnap = surfaceEnabled;
+      localStorage.setItem('eph-surface-snap', surfaceEnabled ? '1' : '0');
+      document.getElementById('ephSurfaceSnap')?.classList.toggle('active', surfaceEnabled);
+    },
     selectAt: event => hitSelectable(window.EPH3D || state()?.viewport, event),
   };
 })();
