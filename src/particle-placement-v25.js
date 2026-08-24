@@ -95,6 +95,9 @@
     S.subSelection = null;
     S.viewport?.setObjects?.(S.objects, S.selectedId);
     S.viewport?.select?.(S.selectedId, false);
+    // Generic particles are point entities, so their origin itself is placed on
+    // the exact center-POV surface. The helper graphic is not used as collision.
+    window.EPH_POV_PLACEMENT_V41?.placeCreated?.(object, { kind: 'particle' });
     setTool?.('move');
     markDirty?.(`Added particle ${effectName}`);
     renderTree?.();
