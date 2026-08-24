@@ -38,6 +38,27 @@
     return count;
   }
 
+  function resetWebglState(viewport, width, height) {
+    const renderer = viewport?.renderer;
+    if (!renderer) return false;
+    try {
+      // A stale render target/scissor/raw GL state can increment Three's frame
+      // counter while every draw goes somewhere other than the visible canvas.
+      // Always restore the default framebuffer before a recovery render.
+      renderer.setRenderTarget?.(null);
+      renderer.setScissorTest?.(false);
+      renderer.state?.reset?.();
+      renderer.resetState?.();
+      renderer.setViewport?.(0, 0, width, height);
+      renderer.autoClear = true;
+      renderer.setClearColor?.(0x111318, 1);
+      return true;
+    } catch (error) {
+      report('error', 'Could not reset visible WebGL framebuffer state.', error?.stack || error?.message || String(error));
+      return false;
+    }
+  }
+
   function stabilizeRenderer(viewport) {
     if (!viewport?.renderer || !viewport?.camera || !viewport?.scene || !viewport?.container) return false;
     window.EPH_VIEWPORT_LAYOUT?.repair?.();
@@ -55,27 +76,46 @@
     canvas.style.setProperty('height', '100%', 'important');
 
     try {
-      viewport.renderer.autoClear = true;
-      viewport.renderer.setScissorTest?.(false);
-      viewport.renderer.setViewport?.(0, 0, width, height);
       if (canvas.width < 2 || canvas.height < 2) viewport.renderer.setSize(width, height, false);
-      viewport.renderer.setClearColor?.(0x111318, 1);
     } catch (error) {
-      report('error', 'Could not restore the WebGL viewport state.', error?.stack || error?.message || String(error));
+      report('error', 'Could not restore the WebGL canvas size.', error?.stack || error?.message || String(error));
       return false;
     }
+    if (!resetWebglState(viewport, width, height)) return false;
 
     viewport.scene.visible = true;
+    viewport.scene.overrideMaterial = null;
     if (viewport.objectGroup) viewport.objectGroup.visible = true;
     if (viewport.editGroup) viewport.editGroup.visible = true;
     if (viewport.gridHelper) viewport.gridHelper.visible = typeof S === 'undefined' ? true : S.grid !== false;
     viewport.camera.aspect = width / height;
     viewport.camera.near = 0.1;
     viewport.camera.far = Math.max(500000, Number(viewport.camera.far) || 0);
+    viewport.camera.layers?.enable?.(0);
     viewport.camera.updateProjectionMatrix();
     viewport.camera.updateMatrixWorld?.(true);
     viewport.scene.updateMatrixWorld?.(true);
     return true;
+  }
+
+  function framebufferSample(viewport) {
+    const renderer = viewport?.renderer;
+    const canvas = renderer?.domElement;
+    const gl = renderer?.getContext?.();
+    if (!gl || !canvas || canvas.width < 1 || canvas.height < 1 || gl.isContextLost?.()) return null;
+    try {
+      const pixel = new Uint8Array(4);
+      const x = Math.max(0, Math.min(canvas.width - 1, Math.floor(canvas.width / 2)));
+      const y = Math.max(0, Math.min(canvas.height - 1, Math.floor(canvas.height / 2)));
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      return [...pixel];
+    } catch {
+      return null;
+    }
+  }
+
+  function visiblePixel(sample) {
+    return Array.isArray(sample) && sample.length >= 4 && (sample[0] > 0 || sample[1] > 0 || sample[2] > 0) && sample[3] > 0;
   }
 
   function forceFrame(reason = 'manual', allowFrameFallback = false) {
@@ -86,6 +126,7 @@
       if (!stabilizeRenderer(viewport)) return null;
       viewport.renderer.render(viewport.scene, viewport.camera);
       let info = viewport.renderer.info?.render || {};
+      let pixel = framebufferSample(viewport);
 
       // Root-count checks can say everything is healthy while the camera draws
       // zero calls. On a normal map, frame the scene once only when a forced
@@ -94,13 +135,38 @@
         viewport.frameAll?.();
         viewport.camera.updateMatrixWorld?.(true);
         viewport.scene.updateMatrixWorld?.(true);
+        resetWebglState(viewport, Math.max(1, viewport.container.clientWidth), Math.max(1, viewport.container.clientHeight));
         viewport.renderer.render(viewport.scene, viewport.camera);
         info = viewport.renderer.info?.render || {};
+        pixel = framebufferSample(viewport);
         report('warning', 'No draw calls were visible after project load; framed the map and rendered again.', {
           reason,
           roots: renderableRoots(viewport),
           calls: Number(info.calls || 0),
           triangles: Number(info.triangles || 0),
+          pixel,
+        });
+      }
+
+      // The clear color is intentionally charcoal, so [0,0,0,0/255] after a
+      // render means the visible default framebuffer still was not updated.
+      // Reset raw renderer state once more and prove the visible buffer changed.
+      if (!visiblePixel(pixel)) {
+        const width = Math.max(1, Math.floor(viewport.container.clientWidth || 1));
+        const height = Math.max(1, Math.floor(viewport.container.clientHeight || 1));
+        resetWebglState(viewport, width, height);
+        viewport.renderer.clear?.(true, true, true);
+        viewport.renderer.render(viewport.scene, viewport.camera);
+        info = viewport.renderer.info?.render || {};
+        pixel = framebufferSample(viewport);
+        report(visiblePixel(pixel) ? 'warning' : 'error', visiblePixel(pixel)
+          ? 'Recovered a black/default framebuffer by resetting WebGL state.'
+          : 'Visible WebGL framebuffer remained black after forced recovery.', {
+          reason,
+          calls: Number(info.calls || 0),
+          triangles: Number(info.triangles || 0),
+          roots: renderableRoots(viewport),
+          pixel,
         });
       }
 
@@ -114,6 +180,8 @@
         lines: Number(viewport.renderer.info?.render?.lines || 0),
         roots: renderableRoots(viewport),
         canvas: [viewport.renderer.domElement.width || 0, viewport.renderer.domElement.height || 0],
+        pixel,
+        framebufferVisible: visiblePixel(pixel),
       };
     } catch (error) {
       report('error', 'Forced WebGL frame failed.', { reason, error: error?.stack || error?.message || String(error) });
@@ -169,10 +237,10 @@
       installViewport(viewportNow());
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const frame = forceFrame('project-load', true);
-      report(frame && (frame.calls > 0 || frame.roots === 0) ? 'normal' : 'warning', 'Actual WebGL frame verified after project load.', {
+      report(frame?.framebufferVisible ? 'normal' : 'warning', 'Actual visible WebGL framebuffer verified after project load.', {
         map: project?.name || null,
         streamed: !normalMap(),
-        ...(frame || { frame: null, calls: null, roots: renderableRoots(viewportNow()) }),
+        ...(frame || { frame: null, calls: null, roots: renderableRoots(viewportNow()), framebufferVisible: false }),
       });
       return result;
     };
@@ -221,5 +289,5 @@
     force: () => forceFrame('manual', true),
     state: () => ({ viewport: Boolean(viewportNow()), frame: lastFrame, stalledChecks }),
   };
-  report('normal', 'Actual WebGL frame-progress watchdog installed.');
+  report('normal', 'Actual visible WebGL framebuffer watchdog installed.');
 })();
