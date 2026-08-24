@@ -126,20 +126,9 @@
     return true;
   }
 
-  function loadFinalStabilityPass() {
-    if (window.__ephEditorInteractionStabilityV49 || document.querySelector('script[data-eph-v49]')) return;
-    const script = document.createElement('script');
-    script.src = 'editor-interaction-stability-v49.js';
-    script.async = false;
-    script.dataset.ephV49 = '1';
-    script.onerror = () => console.error('[Selection Sync V48] Could not load editor-interaction-stability-v49.js');
-    document.body.appendChild(script);
-  }
-
   install();
   window.addEventListener('eph3d-ready', event => install(event.detail));
   window.addEventListener('eph-runtime-ready', () => install(), { once: true });
-  queueMicrotask(loadFinalStabilityPass);
 
   window.EPH_SELECTION_SYNC_V48 = { install };
 })();
