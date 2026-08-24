@@ -91,6 +91,12 @@
   function warmMaterial(item, thumb = null) {
     const path = String(item?.path || '').trim();
     if (!path || path === 'ERROR' || !thumb || thumb.classList.contains('real-thumb')) return;
+
+    // This path runs only for a hovered/pressed card. Prewarming one material
+    // here makes the eventual Apply click fast without bulk-decoding dozens of
+    // full textures during normal Asset Browser rendering.
+    viewport()?.loadMaterialTexture?.(path).catch?.(() => {});
+
     if (!thumbUrls.has(path)) {
       thumbUrls.set(path, Promise.resolve(api.materialPreview?.(path))
         .then(result => result?.ok && result.url ? result.url : null)
