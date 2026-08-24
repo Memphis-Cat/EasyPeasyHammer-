@@ -4,23 +4,69 @@
   if (window.__ephPartNumberingV25) return;
   window.__ephPartNumberingV25 = true;
 
+  let activeCounterKey = '';
+  let highWater = 0;
+
   function partNumberFromName(name) {
     const match = String(name || '').trim().match(/^part(?:[\s_-]*)(\d+)$/i);
     return match ? Number(match[1]) : null;
   }
 
-  function nextPartNumber() {
+  function counterKey() {
+    const project = S?.project;
+    const identity = String(project?.id || project?.vmapPath || project?.path || project?.name || 'unsaved-map');
+    return `eph-part-high-water-v26:${identity}`;
+  }
+
+  function observedHighest() {
     let highest = 0;
     for (const object of S?.objects || []) {
-      if (object?.type !== 'part') continue;
-      const number = partNumberFromName(object.name);
+      const number = partNumberFromName(object?.name);
       if (Number.isInteger(number) && number > highest) highest = number;
     }
-    return highest + 1;
+    // During the current editor session a Part may already have been consumed by
+    // CSG or deleted. Keep those numbers reserved too instead of immediately
+    // recycling them just because the object is no longer present.
+    for (const entry of S?.logs || []) {
+      const text = String(entry?.message || '');
+      for (const match of text.matchAll(/\bPart[_\s-]*(\d+)\b/gi)) {
+        const number = Number(match[1]);
+        if (Number.isInteger(number) && number > highest) highest = number;
+      }
+    }
+    return highest;
+  }
+
+  function syncHighWater() {
+    const key = counterKey();
+    if (key !== activeCounterKey) {
+      activeCounterKey = key;
+      highWater = 0;
+    }
+    let stored = 0;
+    try { stored = Number(localStorage.getItem(key) || 0) || 0; } catch {}
+    highWater = Math.max(highWater, stored, observedHighest());
+    return highWater;
+  }
+
+  function persistHighWater() {
+    if (!activeCounterKey) activeCounterKey = counterKey();
+    try { localStorage.setItem(activeCounterKey, String(highWater)); } catch {}
+  }
+
+  function nextPartNumber() {
+    return syncHighWater() + 1;
   }
 
   function nextPartName() {
-    return `Part_${String(nextPartNumber()).padStart(3, '0')}`;
+    highWater = nextPartNumber();
+    persistHighWater();
+    return `Part_${String(highWater).padStart(3, '0')}`;
+  }
+
+  function reserveExistingNames() {
+    syncHighWater();
+    persistHighWater();
   }
 
   function copyEditorFlags(source, target) {
@@ -82,15 +128,16 @@
     return copy;
   }
 
-  // Replace the renderer functions so every creation path uses the same
-  // monotonically increasing Part_001 / Part_002 / Part_003 naming rule.
+  // Replace the renderer functions so every creation path uses one monotonic
+  // Part sequence. Numbers are never recycled after delete, conversion or CSG.
   addPart = uniqueAddPart;
   duplicate = uniqueDuplicate;
   window.addPart = uniqueAddPart;
   window.duplicate = uniqueDuplicate;
-  window.EPH_PART_NUMBERING = { nextPartName, nextPartNumber };
+  window.EPH_PART_NUMBERING = { nextPartName, nextPartNumber, reserveExistingNames };
 
   const rebind = () => {
+    reserveExistingNames();
     const add = document.getElementById('topAddPart');
     const dup = document.getElementById('toolbarDuplicate');
     if (add) add.onclick = uniqueAddPart;
@@ -100,5 +147,5 @@
   queueMicrotask(rebind);
   window.addEventListener('eph-runtime-ready', rebind, { once: true });
 
-  console.info('[Part Numbering V25] Sequential unique part names enabled.');
+  console.info('[Part Numbering V25] Monotonic unique Part names enabled; deleted/converted/CSG numbers are not reused.');
 })();
