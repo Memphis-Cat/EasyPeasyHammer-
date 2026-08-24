@@ -4,7 +4,7 @@ setlocal
 cd /d "%~dp0"
 set "EXIT_CODE=0"
 set "EB_VERSION="
-set "SAFE_EB_VERSION=26.15.7"
+set "SAFE_EB_VERSION=26.15.3"
 set "SAFE_NPM_VERSION=10.9.3"
 set "NPM10_DIR=%CD%\.runtime\npm10"
 set "NPM10_BIN=%NPM10_DIR%\node_modules\.bin"
