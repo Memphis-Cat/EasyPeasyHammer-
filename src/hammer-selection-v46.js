@@ -10,28 +10,37 @@
   const BOX_NAME = 'EPH_HammerSelectionBoundsV46';
   const DIMENSION_NAME = 'EPH_HammerSelectionDimensionsV46';
   const SELECTION_YELLOW = 0xffd84d;
-  const FILL_OPACITY = 0.055;
+  const FILL_OPACITY = 0.13;
 
   let installedViewport = null;
-  let highlightRoot = null;
+  let highlightEntries = [];
   let boundsHelper = null;
   let boundsBox = null;
   let dimensionRoot = null;
   let dimensionLabels = [];
-  let currentDisplayRoot = null;
-  let currentSelectedId = null;
+  let currentDisplayRoots = [];
+  let currentSelectionKey = '';
   let transformListenersInstalled = null;
 
   const objects = () => state()?.objects || [];
   const objectById = id => objects().find(object => object?.id === id) || null;
+  const selectableObject = object => Boolean(object && !['world', 'folder'].includes(object.type));
 
-  function logicalSelectionId(viewport) {
+  function logicalSelectionIds(viewport) {
     const s = state();
-    if (s && Object.prototype.hasOwnProperty.call(s, 'selectedId')) return s.selectedId ?? null;
-    return viewport?.selectedId ?? null;
+    const result = [];
+    const add = id => {
+      if (!id || result.includes(id)) return;
+      const object = objectById(id);
+      if (selectableObject(object)) result.push(id);
+    };
+
+    if (Array.isArray(s?.multiSelectedIds)) for (const id of s.multiSelectedIds) add(id);
+    add(s?.selectedId ?? viewport?.selectedId ?? null);
+    return result;
   }
 
-  function displayRootFor(viewport, id = logicalSelectionId(viewport)) {
+  function displayRootFor(viewport, id) {
     if (!viewport?.objectRoots || !id) return null;
     const object = objectById(id);
 
@@ -52,6 +61,20 @@
     return viewport.objectRoots.get(id) || null;
   }
 
+  function selectedDisplayEntries(viewport) {
+    const seenRoots = new Set();
+    const result = [];
+    for (const id of logicalSelectionIds(viewport)) {
+      const root = displayRootFor(viewport, id);
+      if (!root?.visible) continue;
+      const rootKey = root.uuid || root.id || id;
+      if (seenRoots.has(rootKey)) continue;
+      seenRoots.add(rootKey);
+      result.push({ id, root, rootKey });
+    }
+    return result;
+  }
+
   function disposeMaterial(material) {
     if (!material) return;
     if (Array.isArray(material)) material.forEach(disposeMaterial);
@@ -61,9 +84,9 @@
   function disposeOverlay(node) {
     if (!node) return;
     node.traverse?.(child => {
+      if (child.userData?.ephSelectionOwnedTexture) child.material?.map?.dispose?.();
       if (child.userData?.ephSelectionOwnedGeometry) child.geometry?.dispose?.();
       if (child.userData?.ephSelectionOwnedMaterial) disposeMaterial(child.material);
-      if (child.userData?.ephSelectionOwnedTexture) child.material?.map?.dispose?.();
     });
     node.parent?.remove?.(node);
   }
@@ -75,8 +98,7 @@
   }
 
   function clearHighlight() {
-    disposeOverlay(highlightRoot);
-    highlightRoot = null;
+    for (const entry of highlightEntries.splice(0)) disposeOverlay(entry.highlight);
     if (boundsHelper) {
       boundsHelper.parent?.remove?.(boundsHelper);
       boundsHelper.geometry?.dispose?.();
@@ -85,8 +107,8 @@
     boundsHelper = null;
     boundsBox = null;
     clearDimensions();
-    currentDisplayRoot = null;
-    currentSelectedId = null;
+    currentDisplayRoots = [];
+    currentSelectionKey = '';
   }
 
   function unpickable(node) {
@@ -138,9 +160,6 @@
       color: SELECTION_YELLOW,
       transparent: true,
       opacity: 0.98,
-      // This MUST depth-test against the real selected model. With depthTest
-      // disabled, the enlarged back-face copy paints the entire model solid
-      // yellow instead of only showing around its silhouette.
       depthTest: true,
       depthWrite: false,
       side: T.BackSide,
@@ -149,7 +168,14 @@
   }
 
   function lineMaterial(T) {
-    return new T.LineBasicMaterial({ color: SELECTION_YELLOW, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false, toneMapped: false });
+    return new T.LineBasicMaterial({
+      color: SELECTION_YELLOW,
+      transparent: true,
+      opacity: 0.98,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
   }
 
   function spriteMaterial(T, original = null) {
@@ -207,12 +233,12 @@
     return renderables;
   }
 
-  function makeHighlight(displayRoot) {
+  function makeHighlight(displayRoot, selectionId) {
     const T = THREE();
     if (!T || !displayRoot) return null;
-    const overlay = new T.Group();
+    const overlay = unpickable(new T.Group());
     overlay.name = HIGHLIGHT_NAME;
-    unpickable(overlay);
+    overlay.userData.ephSelectionId = selectionId;
 
     const sourceChildren = [...displayRoot.children].filter(child =>
       child?.visible !== false
@@ -287,13 +313,7 @@
     clearDimensions();
     dimensionRoot = unpickable(new T.Group());
     dimensionRoot.name = DIMENSION_NAME;
-
-    const specs = [
-      ['x', '#ff5b5b'],
-      ['y', '#76e05d'],
-      ['z', '#5c8dff'],
-    ];
-    for (const [axis, color] of specs) {
+    for (const [axis, color] of [['x', '#ff5b5b'], ['y', '#76e05d'], ['z', '#5c8dff']]) {
       const sprite = textSprite('0', color);
       if (!sprite) continue;
       sprite.userData.ephDimensionAxis = axis;
@@ -337,52 +357,80 @@
         oldMap?.dispose?.();
       }
       sprite.scale.set(spriteWidth, spriteHeight, 1);
-
       if (axis === 'x') sprite.position.set(center.x, min.y - pad, max.z + pad * 0.25);
       else if (axis === 'y') sprite.position.set(min.x - pad, center.y, max.z + pad * 0.25);
       else sprite.position.set(min.x - pad, min.y - pad, center.z);
     }
   }
 
-  function updateBounds() {
+  function updateBounds(force = false) {
     const T = THREE();
     const viewport = installedViewport;
-    if (!T || !currentDisplayRoot || !boundsBox || !boundsHelper) return;
-    const overlayVisible = highlightRoot?.visible;
+    if (!T || !viewport || !boundsBox || !boundsHelper || !currentDisplayRoots.length) return;
+
+    // Selection overlays are children of the real roots, so they follow a drag
+    // automatically. Avoid expensive Box3 walks on every gizmo mousemove and
+    // refresh the aggregate dimensions once the drag ends.
+    if (!force && viewport.transform?.dragging) return;
+
+    const overlayVisibility = highlightEntries.map(entry => [entry.highlight, entry.highlight?.visible]);
     const dimsVisible = dimensionRoot?.visible;
-    if (highlightRoot) highlightRoot.visible = false;
+    for (const [highlight] of overlayVisibility) if (highlight) highlight.visible = false;
     if (dimensionRoot) dimensionRoot.visible = false;
-    try { boundsBox.setFromObject(currentDisplayRoot, true); }
-    finally {
-      if (highlightRoot) highlightRoot.visible = overlayVisible !== false;
+
+    try {
+      boundsBox.makeEmpty();
+      const temporary = new T.Box3();
+      for (const root of currentDisplayRoots) {
+        temporary.makeEmpty();
+        temporary.setFromObject(root, true);
+        if (!temporary.isEmpty()) boundsBox.union(temporary);
+      }
+    } finally {
+      for (const [highlight, visible] of overlayVisibility) if (highlight) highlight.visible = visible !== false;
       if (dimensionRoot) dimensionRoot.visible = dimsVisible !== false;
     }
+
     boundsHelper.visible = !boundsBox.isEmpty();
     updateDimensions(viewport);
+  }
+
+  function selectionKey(entries) {
+    return entries.map(entry => `${entry.id}:${entry.rootKey}`).sort().join('|');
   }
 
   function rebuild(viewport = installedViewport, force = false) {
     const T = THREE();
     if (!viewport?.scene || !T) return false;
-    const selectedId = logicalSelectionId(viewport);
-    const displayRoot = displayRootFor(viewport, selectedId);
+    installedViewport = viewport;
+    const entries = selectedDisplayEntries(viewport);
+    const nextKey = selectionKey(entries);
 
-    if (!selectedId || !displayRoot || !displayRoot.visible) {
+    if (!entries.length) {
       clearHighlight();
+      hideLegacySelectionHelper(viewport);
       return false;
     }
 
-    if (!force && currentSelectedId === selectedId && currentDisplayRoot === displayRoot && highlightRoot?.parent) {
-      updateBounds();
+    const intact = highlightEntries.length === entries.length
+      && highlightEntries.every(entry => entry.highlight?.parent && entries.some(next => next.id === entry.id && next.root === entry.root));
+    if (!force && intact && nextKey === currentSelectionKey) {
+      currentDisplayRoots = entries.map(entry => entry.root);
+      updateBounds(false);
+      hideLegacySelectionHelper(viewport);
       return true;
     }
 
     clearHighlight();
-    currentSelectedId = selectedId;
-    currentDisplayRoot = displayRoot;
+    currentSelectionKey = nextKey;
+    currentDisplayRoots = entries.map(entry => entry.root);
 
-    highlightRoot = makeHighlight(displayRoot);
-    if (highlightRoot) displayRoot.add(highlightRoot);
+    for (const entry of entries) {
+      const highlight = makeHighlight(entry.root, entry.id);
+      if (!highlight) continue;
+      entry.root.add(highlight);
+      highlightEntries.push({ id: entry.id, root: entry.root, highlight });
+    }
 
     boundsBox = new T.Box3();
     boundsHelper = unpickable(new T.Box3Helper(boundsBox, SELECTION_YELLOW));
@@ -395,7 +443,8 @@
     boundsHelper.renderOrder = 10040;
     viewport.scene.add(boundsHelper);
     ensureDimensions(viewport);
-    updateBounds();
+    updateBounds(true);
+    hideLegacySelectionHelper(viewport);
     return true;
   }
 
@@ -419,9 +468,11 @@
   function installTransformListeners(viewport) {
     if (!viewport?.transform || transformListenersInstalled === viewport.transform) return;
     transformListenersInstalled = viewport.transform;
-    viewport.transform.addEventListener?.('objectChange', updateBounds);
-    viewport.transform.addEventListener?.('change', updateBounds);
-    viewport.transform.addEventListener?.('dragging-changed', updateBounds);
+    viewport.transform.addEventListener?.('objectChange', () => updateBounds(false));
+    viewport.transform.addEventListener?.('change', () => updateBounds(false));
+    viewport.transform.addEventListener?.('dragging-changed', event => {
+      if (!event.value) updateBounds(true);
+    });
   }
 
   function hideLegacySelectionHelper(viewport) {
@@ -449,6 +500,7 @@
   install();
   window.addEventListener('eph3d-ready', event => install(event.detail));
   window.addEventListener('eph-runtime-ready', () => install(), { once: true });
+  window.addEventListener('eph-selection-changed', () => queueMicrotask(() => rebuild(installedViewport, true)));
 
   let checks = 0;
   const guard = setInterval(() => {
@@ -456,13 +508,16 @@
     const viewport = window.EPH3D || state()?.viewport;
     if (viewport) {
       install(viewport);
-      hideLegacySelectionHelper(viewport);
-      if (highlightRoot?.parent) updateBounds();
-      else if (!logicalSelectionId(viewport)) clearHighlight();
+      rebuild(viewport, false);
     }
     if (checks >= 80) clearInterval(guard);
   }, 250);
 
-  window.EPH_HAMMER_SELECTION_V46 = { install, rebuild, clear: clearHighlight };
-  console.info('[Hammer Selection V46] Yellow silhouette with true low-opacity yellow tint, dimensions and deselection parity installed.');
+  window.EPH_HAMMER_SELECTION_V46 = {
+    install,
+    rebuild,
+    clear: clearHighlight,
+    ids: () => logicalSelectionIds(installedViewport),
+  };
+  console.info('[Hammer Selection V46] Unified yellow selection overlays, aggregate dimensions and deselection parity installed.');
 })();
