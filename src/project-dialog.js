@@ -238,6 +238,7 @@ const LATE_PASSES = [
   'render-frame-watchdog-v36.js',
   'instant-assets-v56.js',
   'entity-model-placement-v57.js',
+  'editor-correctness-v58.js',
   'startup-recents-v14.js'
 ];
 
