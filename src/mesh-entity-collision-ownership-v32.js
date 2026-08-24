@@ -14,21 +14,20 @@
     grenades: 'materials/tools/toolsgrenadeclip.vmat',
     bullets: 'materials/tools/toolsblockbullets_cs.vmat',
   };
-  const TRIGGER_CLASSES = new Set(['func_bomb_target', 'func_buyzone', 'func_hostage_rescue', 'func_precipitation']);
+  const NON_BLOCKING_VOLUMES = new Set(['func_bomb_target', 'func_buyzone', 'func_hostage_rescue', 'func_precipitation']);
 
   let syncing = false;
-  let installedApply = null;
+  let rawApply = null;
   let installedPrepare = null;
   let wrappedAddEntity = null;
   let wrappedRenderProperties = null;
 
   const state = () => (typeof S !== 'undefined' ? S : window.S);
   const objects = () => state()?.objects || [];
-  const objectById = id => objects().find(object => object?.id === id) || null;
   const classKey = value => String(value || '').trim().toLowerCase();
   const isMeshEntity = object => Boolean(object && ['entity', 'prop'].includes(object.type) && (object.ephMeshEntity || object.ephMeshChildIds?.length));
   const isWeatherVolume = object => Boolean(object?.ephWeatherVolume);
-  const isTriggerClass = className => classKey(className).startsWith('trigger_') || TRIGGER_CLASSES.has(classKey(className));
+  const isNonBlockingVolume = object => Boolean(object && (classKey(object.className).startsWith('trigger_') || NON_BLOCKING_VOLUMES.has(classKey(object.className))));
 
   function report(level, message, data = null) {
     const method = level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info';
@@ -49,16 +48,47 @@
     return true;
   }
 
+  function writeObject(doc, object) {
+    if (!doc || !object?.dmxId || !rawApply) return;
+    try { rawApply(doc, object); }
+    catch (error) { report('warning', `Could not write collision state for ${object.name || object.id}.`, error?.message || String(error)); }
+  }
+
+  function syncWrapper(wrapper, options = {}) {
+    if (!isMeshEntity(wrapper)) return false;
+    const doc = options.doc || state()?.doc;
+    const list = options.objects || objects();
+    const volume = isNonBlockingVolume(wrapper);
+    let changed = false;
+
+    wrapper.ephCollisionOwnedByEntity = true;
+    if (volume) {
+      changed = setFlag(wrapper, 'blockPlayers', false) || changed;
+      changed = setFlag(wrapper, 'blockGrenades', false) || changed;
+      changed = setFlag(wrapper, 'blockBullets', false) || changed;
+    }
+
+    for (const part of childParts(wrapper, list)) {
+      part.ephMeshEntityChild = true;
+      part.ephCollisionOwnerId = wrapper.id;
+      changed = setFlag(part, 'blockPlayers', false) || changed;
+      changed = setFlag(part, 'blockGrenades', false) || changed;
+      changed = setFlag(part, 'blockBullets', false) || changed;
+      changed = setFlag(part, 'collision', volume ? true : wrapper.collision !== false) || changed;
+      writeObject(doc, part);
+      if (options.updateViewport) state()?.viewport?.updateObject?.(part);
+    }
+
+    if (options.writeWrapper) writeObject(doc, wrapper);
+    return changed;
+  }
+
   function adoptNewWrapper(wrapper) {
     if (!isMeshEntity(wrapper)) return false;
     const children = childParts(wrapper);
-    const trigger = isTriggerClass(wrapper.className);
     let changed = false;
 
-    // On a normal Part -> entity conversion, move the editor collision ownership
-    // to the entity wrapper before the hidden mesh is neutralized. Trigger-style
-    // volumes intentionally start passable instead of inheriting wall/clip flags.
-    if (trigger) {
+    if (isNonBlockingVolume(wrapper)) {
       changed = setFlag(wrapper, 'collision', true) || changed;
       changed = setFlag(wrapper, 'blockPlayers', false) || changed;
       changed = setFlag(wrapper, 'blockGrenades', false) || changed;
@@ -72,43 +102,7 @@
     }
 
     wrapper.ephCollisionOwnedByEntity = true;
-    return syncWrapper(wrapper, { updateViewport: true, applyWrapper: true }) || changed;
-  }
-
-  function syncWrapper(wrapper, options = {}) {
-    if (!isMeshEntity(wrapper)) return false;
-    const s = state();
-    const doc = options.doc || s?.doc;
-    const trigger = isTriggerClass(wrapper.className);
-    let changed = false;
-
-    wrapper.ephCollisionOwnedByEntity = true;
-    for (const part of childParts(wrapper, options.objects || objects())) {
-      part.ephMeshEntityChild = true;
-      part.ephCollisionOwnerId = wrapper.id;
-
-      // Hidden owned geometry must never independently emit player/grenade/
-      // bullet helper meshes. Those three settings belong to the entity only.
-      changed = setFlag(part, 'blockPlayers', false) || changed;
-      changed = setFlag(part, 'blockGrenades', false) || changed;
-      changed = setFlag(part, 'blockBullets', false) || changed;
-
-      // CMapMesh still carries the physical shape. For regular mesh entities its
-      // physics follows the entity's Colliding toggle. Trigger/weather volumes
-      // keep an internal CMapMesh physics volume so the Source 2 entity has a
-      // usable touch/precipitation shape; toolstrigger keeps it non-wall-like.
-      const wantedCollision = trigger ? true : wrapper.collision !== false;
-      changed = setFlag(part, 'collision', wantedCollision) || changed;
-
-      if (doc && part.dmxId && installedApply) {
-        try { installedApply(doc, part); } catch (error) { report('warning', `Could not synchronize child collision for ${part.name || part.id}.`, error?.message || String(error)); }
-      }
-      if (options.updateViewport) s?.viewport?.updateObject?.(part);
-    }
-
-    if (options.applyWrapper && doc && wrapper.dmxId && installedApply) {
-      try { installedApply(doc, wrapper); } catch {}
-    }
+    changed = syncWrapper(wrapper, { doc: state()?.doc, updateViewport: true, writeWrapper: true }) || changed;
     return changed;
   }
 
@@ -119,9 +113,7 @@
     changed = setFlag(object, 'blockGrenades', false) || changed;
     changed = setFlag(object, 'blockBullets', false) || changed;
     changed = setFlag(object, 'collision', true) || changed;
-    if (changed && options.doc && object.dmxId && installedApply) {
-      try { installedApply(options.doc, object); } catch {}
-    }
+    if (changed) writeObject(options.doc || state()?.doc, object);
     return changed;
   }
 
@@ -165,13 +157,11 @@
     VMAP.addPart(doc, options);
   }
 
-  function appendEntityOwnedHelpers(doc, list) {
+  function appendOwnedHelpers(doc, list) {
     const counts = { players: 0, grenades: 0, bullets: 0 };
     for (const wrapper of list || []) {
-      if (!isMeshEntity(wrapper) || !wrapper?.dmxId) continue;
-      const parts = childParts(wrapper, list);
-      if (!parts.length) continue;
-      for (const part of parts) {
+      if (!isMeshEntity(wrapper) || !wrapper?.dmxId || isNonBlockingVolume(wrapper)) continue;
+      for (const part of childParts(wrapper, list)) {
         if (!part?.dmxId) continue;
         if (wrapper.blockPlayers) { addOwnedHelper(doc, wrapper, part, 'players', MATERIALS.players); counts.players++; }
         if (wrapper.blockGrenades) { addOwnedHelper(doc, wrapper, part, 'grenades', MATERIALS.grenades); counts.grenades++; }
@@ -184,13 +174,13 @@
 
   function installApply() {
     if (VMAP.applyObjectToDocument?.__ephMeshEntityCollisionV32) {
-      installedApply = VMAP.applyObjectToDocument.__ephRawApplyV32 || VMAP.applyObjectToDocument;
+      rawApply = VMAP.applyObjectToDocument.__ephRawApplyV32 || rawApply;
       return true;
     }
-    const raw = VMAP.applyObjectToDocument.bind(VMAP);
-    installedApply = raw;
+    const previous = VMAP.applyObjectToDocument.bind(VMAP);
+    rawApply = previous;
     const wrapped = function(doc, object, ...rest) {
-      const result = raw(doc, object, ...rest);
+      const result = previous(doc, object, ...rest);
       if (syncing || !object) return result;
       try {
         syncing = true;
@@ -200,8 +190,8 @@
       return result;
     };
     wrapped.__ephMeshEntityCollisionV32 = true;
-    wrapped.__ephRawApplyV32 = raw;
-    wrapped.__ephPrevious = raw;
+    wrapped.__ephRawApplyV32 = previous;
+    wrapped.__ephPrevious = previous;
     VMAP.applyObjectToDocument = wrapped;
     return true;
   }
@@ -211,16 +201,32 @@
       installedPrepare = VMAP.prepareForSave;
       return true;
     }
-    const raw = VMAP.prepareForSave.bind(VMAP);
+    const previous = VMAP.prepareForSave.bind(VMAP);
     const wrapped = function(doc, list, ...rest) {
-      // Neutralize hidden mesh settings before Collision Export V25 runs. This
-      // prevents the old Part from creating its own duplicate clip helpers.
       syncAll(list, { doc, updateViewport: false });
-      const prepared = raw(doc, list, ...rest);
-      return appendEntityOwnedHelpers(prepared, list);
+
+      const propSnapshots = [];
+      for (const object of list || []) {
+        if (!isMeshEntity(object) || object.type !== 'prop') continue;
+        propSnapshots.push([object, object.blockPlayers, object.blockGrenades, object.blockBullets]);
+        object.blockPlayers = false;
+        object.blockGrenades = false;
+        object.blockBullets = false;
+      }
+
+      let prepared;
+      try { prepared = previous(doc, list, ...rest); }
+      finally {
+        for (const [object, players, grenades, bullets] of propSnapshots) {
+          object.blockPlayers = players;
+          object.blockGrenades = grenades;
+          object.blockBullets = bullets;
+        }
+      }
+      return appendOwnedHelpers(prepared, list);
     };
     wrapped.__ephMeshEntityCollisionV32 = true;
-    wrapped.__ephPrevious = raw;
+    wrapped.__ephPrevious = previous;
     VMAP.prepareForSave = wrapped;
     installedPrepare = wrapped;
     return true;
@@ -232,25 +238,27 @@
       wrappedAddEntity = addEntity;
       return true;
     }
-    const raw = addEntity;
+    const previous = addEntity;
     const wrapped = function(item = {}, ...rest) {
       const before = new Set(objects().map(object => object?.id));
-      const result = raw(item, ...rest);
+      const result = previous(item, ...rest);
       const created = result && isMeshEntity(result)
         ? result
         : objects().find(object => !before.has(object?.id) && isMeshEntity(object))
           || (isMeshEntity(current?.()) ? current() : null);
       if (created) {
         adoptNewWrapper(created);
-        try { renderProperties?.(); } catch {}
-        try { renderTree?.(); } catch {}
-        report('normal', `${created.className || 'Mesh entity'} now owns collision settings.`, { wrapper: created.name || created.id, children: childParts(created).map(part => part.id) });
+        try { renderProperties?.(); renderTree?.(); } catch {}
+        report('normal', `${created.className || 'Mesh entity'} now owns collision settings.`, {
+          wrapper: created.name || created.id,
+          children: childParts(created).map(part => part.id),
+        });
       }
       return result;
     };
-    for (const key of Object.keys(raw)) if (key.startsWith('__eph')) wrapped[key] = raw[key];
+    for (const key of Object.keys(previous)) if (key.startsWith('__eph')) wrapped[key] = previous[key];
     wrapped.__ephMeshEntityCollisionV32 = true;
-    wrapped.__ephPrevious = raw;
+    wrapped.__ephPrevious = previous;
     addEntity = wrapped;
     window.addEntity = wrapped;
     wrappedAddEntity = wrapped;
@@ -261,6 +269,13 @@
     const title = [...(host?.querySelectorAll?.('.property-section-title') || [])]
       .find(element => String(element.textContent || '').trim() === 'Collision / Gameplay');
     return title?.closest?.('.property-section') || null;
+  }
+
+  function hideBlockerRows(section) {
+    for (const key of ['blockPlayers', 'blockGrenades', 'blockBullets']) {
+      const row = section?.querySelector?.(`[data-toggle="${key}"]`)?.closest?.('.toggle-row');
+      if (row) row.style.display = 'none';
+    }
   }
 
   function decorateProperties() {
@@ -281,17 +296,22 @@
       if (weather && !weather.querySelector('.eph-collision-owner-note-v32')) {
         const note = document.createElement('div');
         note.className = 'selection-info eph-collision-owner-note-v32';
-        note.textContent = 'Weather volume geometry is owned by func_precipitation and never exports player, grenade or bullet clip helpers.';
+        note.textContent = 'This precipitation volume is non-blocking. Its internal brush cannot create player, grenade or bullet clip helpers.';
         weather.appendChild(note);
       }
       return;
     }
 
-    if (!isMeshEntity(object) || !section || section.querySelector('.eph-collision-owner-note-v32')) return;
-    const note = document.createElement('div');
-    note.className = 'selection-info eph-collision-owner-note-v32';
-    note.textContent = 'Collision belongs to this entity. Its hidden Part is geometry-only and cannot independently create player, grenade or bullet clip meshes.';
-    section.appendChild(note);
+    if (!isMeshEntity(object) || !section) return;
+    if (isNonBlockingVolume(object)) hideBlockerRows(section);
+    if (!section.querySelector('.eph-collision-owner-note-v32')) {
+      const note = document.createElement('div');
+      note.className = 'selection-info eph-collision-owner-note-v32';
+      note.textContent = isNonBlockingVolume(object)
+        ? 'This gameplay volume is intentionally non-blocking. Its hidden Part only supplies the entity shape and cannot export clip meshes.'
+        : 'Collision belongs to this entity. Its hidden Part is geometry-only and cannot independently create player, grenade or bullet clip meshes.';
+      section.appendChild(note);
+    }
   }
 
   function installProperties() {
@@ -301,15 +321,15 @@
       queueMicrotask(decorateProperties);
       return true;
     }
-    const raw = renderProperties;
+    const previous = renderProperties;
     const wrapped = function(...args) {
-      const result = raw(...args);
+      const result = previous(...args);
       queueMicrotask(decorateProperties);
       return result;
     };
-    for (const key of Object.keys(raw)) if (key.startsWith('__eph')) wrapped[key] = raw[key];
+    for (const key of Object.keys(previous)) if (key.startsWith('__eph')) wrapped[key] = previous[key];
     wrapped.__ephMeshEntityCollisionV32 = true;
-    wrapped.__ephPrevious = raw;
+    wrapped.__ephPrevious = previous;
     renderProperties = wrapped;
     window.renderProperties = wrapped;
     wrappedRenderProperties = wrapped;
