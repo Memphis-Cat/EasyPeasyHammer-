@@ -59,8 +59,10 @@
   function disposeOverlay(node) {
     if (!node) return;
     node.traverse?.(child => {
-      child.geometry?.dispose?.();
-      disposeMaterial(child.material);
+      // Highlight clones get their own geometry before styling. Never dispose a
+      // geometry/material that could still be shared with the real map object.
+      if (child.userData?.ephSelectionOwnedGeometry) child.geometry?.dispose?.();
+      if (child.userData?.ephSelectionOwnedMaterial) disposeMaterial(child.material);
     });
     node.parent?.remove?.(node);
   }
@@ -151,6 +153,19 @@
     });
   }
 
+  function ownGeometry(node) {
+    if (!node?.geometry?.clone) return;
+    node.geometry = node.geometry.clone();
+    node.userData ||= {};
+    node.userData.ephSelectionOwnedGeometry = true;
+  }
+
+  function ownMaterial(node, material) {
+    node.material = material;
+    node.userData ||= {};
+    node.userData.ephSelectionOwnedMaterial = true;
+  }
+
   function styleClone(root, mode) {
     const T = THREE();
     if (!T || !root) return 0;
@@ -158,21 +173,20 @@
     root.traverse?.(node => {
       unpickable(node);
       if (node.isMesh || node.isSkinnedMesh) {
-        disposeMaterial(node.material);
-        node.material = mode === 'outline' ? outlineMaterial(T) : fillMaterial(T);
+        ownGeometry(node);
+        ownMaterial(node, mode === 'outline' ? outlineMaterial(T) : fillMaterial(T));
         node.castShadow = false;
         node.receiveShadow = false;
         node.renderOrder = mode === 'outline' ? 10031 : 10030;
         renderables++;
       } else if (node.isLine || node.isLineSegments || node.isPoints) {
-        disposeMaterial(node.material);
-        node.material = lineMaterial(T);
+        ownGeometry(node);
+        ownMaterial(node, lineMaterial(T));
         node.renderOrder = 10032;
         renderables++;
       } else if (node.isSprite) {
         const old = node.material;
-        node.material = spriteMaterial(T, old);
-        disposeMaterial(old);
+        ownMaterial(node, spriteMaterial(T, old));
         node.renderOrder = 10032;
         renderables++;
       } else if (node.isLight || node.isCamera) {
@@ -227,16 +241,15 @@
 
   function updateBounds() {
     const T = THREE();
-    if (!T || !currentDisplayRoot || !boundsBox) return;
+    if (!T || !currentDisplayRoot || !boundsBox || !boundsHelper) return;
     const overlayVisible = highlightRoot?.visible;
     if (highlightRoot) highlightRoot.visible = false;
     try { boundsBox.setFromObject(currentDisplayRoot, true); }
     finally { if (highlightRoot) highlightRoot.visible = overlayVisible !== false; }
-    if (boundsBox.isEmpty()) boundsHelper.visible = false;
-    else boundsHelper.visible = true;
+    boundsHelper.visible = !boundsBox.isEmpty();
   }
 
-  function rebuild(viewport = installedViewport) {
+  function rebuild(viewport = installedViewport, force = false) {
     const T = THREE();
     if (!viewport?.scene || !T) return false;
     const selectedId = logicalSelectionId(viewport);
@@ -247,7 +260,7 @@
       return false;
     }
 
-    if (currentSelectedId === selectedId && currentDisplayRoot === displayRoot && highlightRoot?.parent) {
+    if (!force && currentSelectedId === selectedId && currentDisplayRoot === displayRoot && highlightRoot?.parent) {
       updateBounds();
       return true;
     }
@@ -273,13 +286,14 @@
     return true;
   }
 
-  function wrap(viewport, name) {
+  function wrap(viewport, name, forceRebuild = false) {
     const current = viewport?.[name];
     if (typeof current !== 'function' || current.__ephHammerSelectionV46) return false;
     const previous = current;
     const wrapped = function(...args) {
       const result = previous.apply(this, args);
-      queueMicrotask(() => rebuild(this));
+      const force = forceRebuild && !this.transform?.dragging;
+      queueMicrotask(() => rebuild(this, force));
       return result;
     };
     for (const property of Object.keys(previous)) if (property.startsWith('__eph')) wrapped[property] = previous[property];
@@ -308,14 +322,17 @@
   function install(viewport = window.EPH3D || state()?.viewport) {
     if (!viewport?.objectRoots || !viewport?.scene || !THREE()) return false;
     installedViewport = viewport;
-    wrap(viewport, 'select');
-    wrap(viewport, 'setObjects');
-    wrap(viewport, 'updateObject');
-    wrap(viewport, 'updateSelectionBox');
-    wrap(viewport, 'setTool');
+    wrap(viewport, 'select', true);
+    wrap(viewport, 'setObjects', true);
+    // Async prop/entity model loads normally call updateObject/updateSelectionBox.
+    // Rebuild the amber overlay then, but never recreate heavy model clones in
+    // the middle of an active transform drag.
+    wrap(viewport, 'updateObject', true);
+    wrap(viewport, 'updateSelectionBox', false);
+    wrap(viewport, 'setTool', false);
     installTransformListeners(viewport);
     hideLegacySelectionHelper(viewport);
-    queueMicrotask(() => rebuild(viewport));
+    queueMicrotask(() => rebuild(viewport, true));
     return true;
   }
 
