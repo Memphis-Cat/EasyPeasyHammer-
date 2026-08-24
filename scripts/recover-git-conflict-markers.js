@@ -7,6 +7,10 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const markerPattern = /^(?:<<<<<<< .+|=======|>>>>>>> .+)$/m;
+const textExtensions = new Set([
+  '.js', '.cjs', '.mjs', '.json', '.html', '.css', '.bat', '.cmd', '.ps1',
+  '.cs', '.csproj', '.props', '.targets', '.xml', '.md', '.txt', '.yml', '.yaml',
+]);
 
 function git(args, options = {}) {
   return execFileSync('git', args, {
@@ -16,36 +20,22 @@ function git(args, options = {}) {
   });
 }
 
-function changedPaths() {
-  const output = git(['status', '--porcelain=v1', '-z']);
-  const entries = output.split('\0').filter(Boolean);
-  const paths = [];
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index];
-    if (entry.length < 4) continue;
-    const status = entry.slice(0, 2);
-    let file = entry.slice(3);
-    if (status.includes('R') || status.includes('C')) {
-      const target = entries[++index];
-      if (target) file = target;
-    }
-    if (file) paths.push(file);
-  }
-  return [...new Set(paths)];
+function trackedPaths() {
+  const output = git(['ls-files', '-z']);
+  return output.split('\0').filter(Boolean);
 }
 
-function isTracked(file) {
-  try {
-    execFileSync('git', ['ls-files', '--error-unmatch', '--', file], { cwd: root, stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
+function shouldInspect(file) {
+  const extension = path.extname(file).toLowerCase();
+  return textExtensions.has(extension);
 }
 
 function hasMarkers(file) {
   const absolute = path.join(root, file);
-  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) return false;
+  if (!fs.existsSync(absolute)) return false;
+  let stat;
+  try { stat = fs.statSync(absolute); } catch { return false; }
+  if (!stat.isFile() || stat.size > 32 * 1024 * 1024) return false;
   let text;
   try { text = fs.readFileSync(absolute, 'utf8'); } catch { return false; }
   return markerPattern.test(text);
@@ -56,7 +46,10 @@ function stamp() {
 }
 
 function main() {
-  const marked = changedPaths().filter(file => isTracked(file) && hasMarkers(file));
+  // Scan every tracked text/code file, not only paths Git currently reports as
+  // modified. A previous interrupted stash/merge can leave conflict text in a
+  // working file after the index itself has already been reset.
+  const marked = trackedPaths().filter(file => shouldInspect(file) && hasMarkers(file));
   if (!marked.length) return 0;
 
   const backupRoot = path.join(root, '.runtime', 'git-conflict-backups', stamp());
@@ -74,7 +67,7 @@ function main() {
     console.log(`Recovered from HEAD: ${file}`);
   }
 
-  console.log('Conflict-marker recovery complete. Other local changes were left untouched.');
+  console.log('Conflict-marker recovery complete. Other files were left untouched.');
   return 0;
 }
 
