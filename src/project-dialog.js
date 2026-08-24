@@ -170,6 +170,7 @@ const LATE_PASSES = [
   'entity-fidelity-v17.js',
   'fgd-editor-model-guard-v18.js',
   'entity-fidelity-v18.js',
+  'asset-manager-v24.js',
   'map-local-assets-v19.js',
   'map-local-fast-v21.js',
   'render-performance-v20.js',
