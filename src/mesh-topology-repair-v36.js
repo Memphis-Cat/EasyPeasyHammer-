@@ -92,6 +92,53 @@
     };
   }
 
+  // BSP subtraction on an already-carved concave mesh can return a perfectly
+  // usable surface whose neighboring polygons are locally wound the same way.
+  // Hammer rejects that even when the geometry is otherwise manifold. Resolve
+  // the orientation as a graph-parity problem before doing T-junction repair:
+  // every edge shared by exactly two faces must run in opposite directions.
+  function orientFacesConsistently(sourceFaces) {
+    const faces = sourceFaces.map(face => [...face]);
+    const usage = edgeUsage(faces);
+    const graph = Array.from({ length: faces.length }, () => []);
+
+    for (const list of usage.values()) {
+      if (list.length !== 2) continue;
+      const left = list[0], right = list[1];
+      const sameDirection = left.a === right.a && left.b === right.b;
+      graph[left.faceIndex].push({ face: right.faceIndex, xor: sameDirection ? 1 : 0 });
+      graph[right.faceIndex].push({ face: left.faceIndex, xor: sameDirection ? 1 : 0 });
+    }
+
+    const flip = Array(faces.length).fill(null);
+    let conflicts = 0;
+    for (let start = 0; start < faces.length; start++) {
+      if (flip[start] !== null) continue;
+      flip[start] = 0;
+      const queue = [start];
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const current = queue[cursor];
+        for (const edge of graph[current]) {
+          const wanted = flip[current] ^ edge.xor;
+          if (flip[edge.face] === null) {
+            flip[edge.face] = wanted;
+            queue.push(edge.face);
+          } else if (flip[edge.face] !== wanted) conflicts++;
+        }
+      }
+    }
+
+    let changed = false;
+    let flipped = 0;
+    for (let index = 0; index < faces.length; index++) {
+      if (!flip[index]) continue;
+      faces[index].reverse();
+      changed = true;
+      flipped++;
+    }
+    return { faces, changed, flipped, conflicts };
+  }
+
   function pointOnSegment(point, start, end) {
     if (!finiteVertex(point) || !finiteVertex(start) || !finiteVertex(end)) return null;
     const ax = Number(start[0]), ay = Number(start[1]), az = Number(start[2]);
@@ -116,8 +163,11 @@
 
     let faces = sourceFaces.map(face => cleanFace(face, vertices.length)).filter(face => face.length >= 3);
     if (!faces.length) return { ok: false, changed: false, faces, reason: 'no-valid-faces' };
+
+    const orientation = orientFacesConsistently(faces);
+    faces = orientation.faces;
     let totalSplits = 0;
-    let changed = false;
+    let changed = orientation.changed;
     const initial = topologySummary(faces);
 
     for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -128,6 +178,8 @@
           changed,
           faces,
           splits: totalSplits,
+          flipped: orientation.flipped,
+          orientationConflicts: orientation.conflicts,
           passes: pass,
           beforeBoundaryEdges: initial.boundaryEdges.length,
           afterBoundaryEdges: summary.boundaryEdges.length,
@@ -135,7 +187,7 @@
         };
       }
       if (summary.boundaryVertices.size > MAX_BOUNDARY_VERTICES) {
-        return { ok: false, changed, faces, splits: totalSplits, reason: 'too-many-boundary-vertices', summary };
+        return { ok: false, changed, faces, splits: totalSplits, flipped: orientation.flipped, reason: 'too-many-boundary-vertices', summary };
       }
 
       const candidates = [...summary.boundaryVertices];
@@ -177,7 +229,7 @@
 
       if (!passSplits) {
         const summaryAfter = topologySummary(faces);
-        return { ok: summaryAfter.valid, changed, faces, splits: totalSplits, reason: 'no-more-splits', summary: summaryAfter };
+        return { ok: summaryAfter.valid, changed, faces, splits: totalSplits, flipped: orientation.flipped, reason: 'no-more-splits', summary: summaryAfter };
       }
       totalSplits += passSplits;
       changed = true;
@@ -190,6 +242,7 @@
       changed,
       faces,
       splits: totalSplits,
+      flipped: orientation.flipped,
       passes: MAX_PASSES,
       beforeBoundaryEdges: initial.boundaryEdges.length,
       afterBoundaryEdges: finalSummary.boundaryEdges.length,
@@ -222,7 +275,10 @@
           report('error', `Could not conform ${object.name || object.id || 'Part'} to Hammer topology.`, {
             reason: repair.reason || 'topology-still-invalid',
             boundaryEdges: repair.summary?.boundaryEdges?.length || 0,
+            sameWindingEdges: repair.summary?.sameWindingEdges?.length || 0,
+            overusedEdges: repair.summary?.overusedEdges?.length || 0,
             nonManifoldVertices: repair.summary?.nonManifoldBoundaryVertices?.length || 0,
+            flippedFaces: repair.flipped || 0,
             originalError: error?.message || String(error),
           });
           throw error;
@@ -236,7 +292,8 @@
         }
         try {
           const result = raw(doc, object);
-          report('normal', `Repaired Hammer mesh T-junctions for ${object.name || object.id || 'Part'}.`, {
+          report('normal', `Repaired Hammer mesh topology for ${object.name || object.id || 'Part'}.`, {
+            flippedFaces: repair.flipped || 0,
             splits: repair.splits,
             passes: repair.passes,
             boundaryEdgesBefore: repair.beforeBoundaryEdges,
@@ -257,10 +314,10 @@
     wrapped.__ephPrevious = previous;
     VMAP.applyObjectToDocument = wrapped;
     installed = true;
-    report('normal', 'T-junction conformance is active for topology-changing Hammer mesh writes.');
+    report('normal', 'T-junction and face-winding conformance is active for topology-changing Hammer mesh writes.');
     return true;
   }
 
   install();
-  window.EPH_MESH_TOPOLOGY = { repairTjunctions, topologySummary, install };
+  window.EPH_MESH_TOPOLOGY = { repairTjunctions, topologySummary, orientFacesConsistently, install };
 })();
