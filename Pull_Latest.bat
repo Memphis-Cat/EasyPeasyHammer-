@@ -6,6 +6,18 @@ set "EXIT_CODE=0"
 set "DID_STASH=0"
 set "PACKAGE_BEFORE="
 set "PACKAGE_AFTER="
+set "HAS_CHANGES="
+set "HAS_UNMERGED="
+
+for /f "delims=" %%A in ('git diff --name-only --diff-filter^=U 2^>nul') do set "HAS_UNMERGED=1"
+if defined HAS_UNMERGED (
+    echo Interrupted Git merge/conflict detected.
+    echo Clearing the conflicted index while keeping every working file exactly as it is...
+    git reset
+    if errorlevel 1 goto error
+    echo Git index recovered. Your local file contents were preserved.
+    echo.
+)
 
 for /f "usebackq delims=" %%H in (`git rev-parse HEAD:package.json 2^>nul`) do set "PACKAGE_BEFORE=%%H"
 for /f "delims=" %%A in ('git status --porcelain 2^>nul') do set "HAS_CHANGES=1"
@@ -69,14 +81,19 @@ goto done
 set "EXIT_CODE=1"
 echo.
 echo The GitHub update was downloaded, but Git found a conflict while restoring your local changes.
-echo Your files were not silently deleted. Check: git status
-echo Resolve the listed files, then run Pull_Latest.bat again.
+echo Your local changes are still preserved in the working files and the stash.
+echo Do not delete anything. Run Pull_Latest.bat again after resolving the listed files,
+echo or run "git reset" first if Git reports "needs merge" again.
 goto done
 
 :error
 set "EXIT_CODE=1"
 echo.
 echo Could not temporarily save the local changes. Check the Git error above.
+echo If the error says "needs merge", run this once and retry:
+echo   git reset
+
+echo This does NOT delete your working-file changes.
 
 :done
 echo.
