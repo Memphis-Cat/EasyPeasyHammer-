@@ -6,6 +6,53 @@
   const projectActionIds = ['openVmapButton', 'createProjectButton', 'continueButton'];
   let replayingReadyClick = false;
 
+  function installModernStartup() {
+    if (!document.getElementById('ephStartupModernV53Style')) {
+      const style = document.createElement('link');
+      style.id = 'ephStartupModernV53Style';
+      style.rel = 'stylesheet';
+      style.href = 'startup-modern-v53.css';
+      document.head.appendChild(style);
+    }
+
+    const screen = document.getElementById('startupScreen');
+    const card = screen?.querySelector('.startup-card');
+    if (!screen || !card) return;
+    screen.classList.add('eph-modern-startup-screen');
+    card.classList.add('eph-modern-startup', 'eph-recent-startup');
+
+    // The old single-map startup widgets remain as compatibility anchors for
+    // renderer.js, but never become part of the visible startup UI again.
+    for (const id of ['resumePanel', 'forgetSessionButton']) {
+      const legacy = document.getElementById(id);
+      if (!legacy) continue;
+      legacy.classList.add('hidden');
+      legacy.hidden = true;
+      legacy.setAttribute('aria-hidden', 'true');
+      legacy.style.display = 'none';
+    }
+
+    // Build the modern recent-project surface before the deterministic runtime
+    // finishes. startup-recents-v14 reuses this exact DOM instead of replacing
+    // it, so there is no flash of the old menu while the editor initializes.
+    if (!document.getElementById('ephRecentMaps')) {
+      const section = document.createElement('section');
+      section.id = 'ephRecentMaps';
+      section.className = 'eph-recent-maps';
+      section.innerHTML = `
+        <div class="eph-recent-maps-header">
+          <div class="eph-recent-maps-title">Recent projects</div>
+          <div class="eph-recent-maps-hint">Open a map to continue</div>
+        </div>
+        <div id="ephRecentMapsList" class="eph-recent-maps-list">
+          <div class="eph-recent-maps-empty">Loading recent maps…</div>
+        </div>`;
+      const actions = card.querySelector('.startup-actions');
+      if (actions) card.insertBefore(section, actions);
+      else card.appendChild(section);
+    }
+  }
+
   function makeInteractive(element) {
     if (!element) return;
     element.style.pointerEvents = 'auto';
@@ -58,6 +105,7 @@
   }
 
   function repair() {
+    installModernStartup();
     for (const id of projectActionIds) {
       const button = document.getElementById(id);
       if (!button) continue;
@@ -79,8 +127,8 @@
     installRuntimeGate();
   }
 
-  // project-dialog.js is the only runtime script loader. This file only owns
-  // input/window interaction and the readiness gate above.
+  // project-dialog.js is the only runtime script loader. This file owns the
+  // immediate startup shell, input/window interaction and readiness gate.
   repair();
   requestAnimationFrame(repair);
   setTimeout(repair, 100);
