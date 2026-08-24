@@ -9,11 +9,26 @@ using ValveResourceFormat.ResourceTypes;
 
 record AssetItem(string name, string path, string kind, string source);
 record HostRequest(string? id, string? command, JsonElement args);
+record AssetIndexCache(
+    int version,
+    string cs2Root,
+    string fingerprint,
+    AssetItem[] materials,
+    AssetItem[] models,
+    AssetItem[] sounds,
+    AssetItem[] particles,
+    string[] indexedMounts,
+    int indexedVpkCount);
 
 sealed class AssetService : IDisposable
 {
+    const int AssetIndexVersion = 4;
+    static readonly JsonSerializerOptions IndexJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     readonly string cacheRoot;
-    readonly List<Package> indexPackages = [];
     readonly List<AssetItem> materials = [];
     readonly List<AssetItem> models = [];
     readonly List<AssetItem> sounds = [];
@@ -22,6 +37,8 @@ sealed class AssetService : IDisposable
     readonly List<string> indexedMounts = [];
     GameFileLoader? loader;
     string? cs2Root;
+    int indexedVpkCount;
+    bool indexCacheHit;
 
     public AssetService(string cacheRoot)
     {
@@ -38,8 +55,9 @@ sealed class AssetService : IDisposable
         modelCount = models.Count,
         soundCount = sounds.Count,
         particleCount = particles.Count,
-        indexedVpkCount = indexPackages.Count,
+        indexedVpkCount,
         indexedMounts = indexedMounts.ToArray(),
+        indexCacheHit,
         cacheRoot
     };
 
@@ -54,15 +72,9 @@ sealed class AssetService : IDisposable
     {
         try
         {
-            DisposePackages();
             loader?.Dispose();
             loader = null;
-            materials.Clear();
-            models.Clear();
-            sounds.Clear();
-            particles.Clear();
-            unique.Clear();
-            indexedMounts.Clear();
+            ResetIndex();
 
             var resolved = ResolveCs2Root(root) ?? throw new DirectoryNotFoundException("The selected folder is not a CS2 installation.");
             var gameInfo = Path.Combine(resolved, "game", "csgo", "gameinfo.gi");
@@ -70,7 +82,13 @@ sealed class AssetService : IDisposable
             cs2Root = resolved;
 
             var gameRoot = Path.Combine(resolved, "game");
-            IndexHammerMounts(gameRoot, gameInfo);
+            var mounts = GameSearchMounts(gameRoot, gameInfo).ToArray();
+            var fingerprint = BuildIndexFingerprint(gameRoot, gameInfo, mounts);
+            if (!TryLoadIndexCache(resolved, fingerprint))
+            {
+                IndexHammerMounts(gameRoot, mounts);
+                SaveIndexCache(resolved, fingerprint);
+            }
             return Status();
         }
         catch (Exception ex)
@@ -79,9 +97,121 @@ sealed class AssetService : IDisposable
         }
     }
 
-    void IndexHammerMounts(string gameRoot, string gameInfo)
+    void ResetIndex()
     {
-        foreach (var mount in GameSearchMounts(gameRoot, gameInfo))
+        materials.Clear();
+        models.Clear();
+        sounds.Clear();
+        particles.Clear();
+        unique.Clear();
+        indexedMounts.Clear();
+        indexedVpkCount = 0;
+        indexCacheHit = false;
+    }
+
+    string IndexCachePath(string resolvedRoot)
+    {
+        var rootKey = Hash(Path.GetFullPath(resolvedRoot));
+        return Path.Combine(cacheRoot, $"asset-index-v{AssetIndexVersion}-{rootKey[..12]}.json");
+    }
+
+    static string BuildIndexFingerprint(string gameRoot, string gameInfo, IReadOnlyList<string> mounts)
+    {
+        var stamps = new List<string> { $"index-v{AssetIndexVersion}", FileStamp(gameInfo) };
+        foreach (var mount in mounts.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        {
+            var mountName = Normalize(Path.GetRelativePath(gameRoot, mount));
+            long directoryTicks = 0;
+            try { directoryTicks = Directory.GetLastWriteTimeUtc(mount).Ticks; } catch { }
+            stamps.Add($"mount|{mountName}|{directoryTicks}");
+            try
+            {
+                foreach (var vpk in Directory.EnumerateFiles(mount, "*_dir.vpk", SearchOption.TopDirectoryOnly).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+                    stamps.Add($"vpk|{Normalize(Path.GetRelativePath(gameRoot, vpk))}|{FileStamp(vpk)}");
+            }
+            catch { }
+        }
+        return Hash(string.Join('\n', stamps));
+    }
+
+    static string FileStamp(string file)
+    {
+        try
+        {
+            var info = new FileInfo(file);
+            return $"{Normalize(info.FullName)}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+        }
+        catch { return Normalize(file); }
+    }
+
+    bool TryLoadIndexCache(string resolvedRoot, string fingerprint)
+    {
+        var path = IndexCachePath(resolvedRoot);
+        if (!File.Exists(path)) return false;
+        try
+        {
+            var cached = JsonSerializer.Deserialize<AssetIndexCache>(File.ReadAllText(path), IndexJsonOptions);
+            if (cached is null
+                || cached.version != AssetIndexVersion
+                || !Path.GetFullPath(cached.cs2Root).Equals(Path.GetFullPath(resolvedRoot), StringComparison.OrdinalIgnoreCase)
+                || !cached.fingerprint.Equals(fingerprint, StringComparison.OrdinalIgnoreCase)) return false;
+
+            foreach (var item in cached.materials ?? []) AddCachedAsset(item);
+            foreach (var item in cached.models ?? []) AddCachedAsset(item);
+            foreach (var item in cached.sounds ?? []) AddCachedAsset(item);
+            foreach (var item in cached.particles ?? []) AddCachedAsset(item);
+            indexedMounts.AddRange(cached.indexedMounts ?? []);
+            indexedVpkCount = Math.Max(0, cached.indexedVpkCount);
+            indexCacheHit = true;
+            return unique.Count > 0;
+        }
+        catch
+        {
+            try { File.Delete(path); } catch { }
+            ResetIndex();
+            return false;
+        }
+    }
+
+    void SaveIndexCache(string resolvedRoot, string fingerprint)
+    {
+        try
+        {
+            Directory.CreateDirectory(cacheRoot);
+            var payload = new AssetIndexCache(
+                AssetIndexVersion,
+                Path.GetFullPath(resolvedRoot),
+                fingerprint,
+                materials.ToArray(),
+                models.ToArray(),
+                sounds.ToArray(),
+                particles.ToArray(),
+                indexedMounts.ToArray(),
+                indexedVpkCount);
+            var path = IndexCachePath(resolvedRoot);
+            var temp = path + ".tmp";
+            File.WriteAllText(temp, JsonSerializer.Serialize(payload, IndexJsonOptions));
+            File.Move(temp, path, true);
+        }
+        catch { }
+    }
+
+    void AddCachedAsset(AssetItem item)
+    {
+        var uniqueKey = $"{item.kind}:{item.path}";
+        if (!unique.TryAdd(uniqueKey, item)) return;
+        switch (item.kind.ToLowerInvariant())
+        {
+            case "material": materials.Add(item); break;
+            case "model": models.Add(item); break;
+            case "sound": sounds.Add(item); break;
+            case "particle": particles.Add(item); break;
+        }
+    }
+
+    void IndexHammerMounts(string gameRoot, IReadOnlyList<string> mounts)
+    {
+        foreach (var mount in mounts)
         {
             var mountName = Normalize(Path.GetRelativePath(gameRoot, mount));
             indexedMounts.Add(mountName);
@@ -102,9 +232,9 @@ sealed class AssetService : IDisposable
             {
                 try
                 {
-                    var package = new Package();
+                    using var package = new Package();
                     package.Read(vpk);
-                    indexPackages.Add(package);
+                    indexedVpkCount++;
                     IndexPackage(package, Normalize(Path.GetRelativePath(gameRoot, vpk)));
                 }
                 catch { }
@@ -506,15 +636,8 @@ sealed class AssetService : IDisposable
         return null;
     }
 
-    void DisposePackages()
-    {
-        foreach (var package in indexPackages) package.Dispose();
-        indexPackages.Clear();
-    }
-
     public void Dispose()
     {
-        DisposePackages();
         loader?.Dispose();
     }
 }
@@ -543,7 +666,7 @@ static class Program
                 var a = request.args;
                 result = (request.command ?? "").ToLowerInvariant() switch
                 {
-                    "ping" => new { ok = true, version = "1.2" },
+                    "ping" => new { ok = true, version = "1.3" },
                     "status" => service.Status(),
                     "detect" => service.Detect(GetString(a, "path")),
                     "set-path" => service.Load(GetString(a, "path") ?? ""),
