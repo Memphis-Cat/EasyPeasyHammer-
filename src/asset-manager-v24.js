@@ -206,6 +206,10 @@
   loadExtension('weather-volume-v27.js');
   loadExtension('weather-audio-v37.js');
   loadExtension('particle-placement-v25.js');
+  loadExtension('hammer-parity-v45.js');
+  // Selection parity intentionally loads last so it reflects the final visual
+  // produced by all material/model/entity helper passes above.
+  loadExtension('hammer-selection-v46.js');
 
   window.addEventListener('eph-runtime-ready', () => {
     installTabs();
