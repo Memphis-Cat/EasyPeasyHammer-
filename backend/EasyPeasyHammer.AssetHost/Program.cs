@@ -131,7 +131,7 @@ sealed class AssetService : IDisposable
             }
             catch { }
         }
-        return Hash(string.Join('\n', stamps));
+        return Hash(string.Join("\n", stamps));
     }
 
     static string FileStamp(string file)
