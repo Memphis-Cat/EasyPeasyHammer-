@@ -7,14 +7,13 @@
   const VMAP = window.EPH_VMAP;
   if (!VMAP) return;
 
-  const TOOL_MATERIAL = 'materials/tools/toolstrigger.vmat';
+  const TOOL_MATERIAL = 'materials/tools/toolsprecipitation.vmat';
   const ZONE_PREFIX = 'EPH_WEATHER_ZONE_';
   const FX_PREFIX = 'EPH_WEATHER_FX_';
   const MAP_PARAMS_NAME = 'EPH_WEATHER_MAP_PARAMS';
-  const MAX_EMITTERS = 128;
   const WEATHER = new Map([
-    ['particles/rain_fx/rain.vpcf', { label: 'Rain', kind: 'rain' }],
-    ['particles/rain_fx/snow.vpcf', { label: 'Snow', kind: 'snow' }]
+    ['particles/rain_fx/rain.vpcf', { label: 'Rain', kind: 'rain', subclass: 'precipitation_rain', preciptype: '4' }],
+    ['particles/rain_fx/snow.vpcf', { label: 'Snow', kind: 'snow', subclass: 'precipitation_snow', preciptype: '9' }]
   ]);
 
   const lower = value => String(value || '').replace(/\\/g, '/').replace(/^\/+/, '').trim().toLowerCase();
@@ -50,6 +49,15 @@
       item.value = String(value);
     }
   };
+  const childArray = element => {
+    let item = field(element, 'children');
+    if (!item) {
+      item = { key: 'children', type: 'element_array', value: [] };
+      element.fields.push(item);
+    }
+    if (!Array.isArray(item.value)) item.value = [];
+    return item.value;
+  };
   const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
   function normalizedPath(value) {
@@ -57,6 +65,12 @@
     if (path.toLowerCase().endsWith('_c')) path = path.slice(0, -2);
     if (path && !path.toLowerCase().endsWith('.vpcf')) path += '.vpcf';
     return path;
+  }
+
+  function infoForKind(kind) {
+    return String(kind).toLowerCase() === 'snow'
+      ? { label: 'Snow', kind: 'snow', subclass: 'precipitation_snow', preciptype: '9', path: 'particles/rain_fx/snow.vpcf' }
+      : { label: 'Rain', kind: 'rain', subclass: 'precipitation_rain', preciptype: '4', path: 'particles/rain_fx/rain.vpcf' };
   }
 
   function classify(path) {
@@ -123,12 +137,12 @@
   }
 
   function settingsFromMarker(name) {
-    const match = String(name || '').match(/^EPH_WEATHER_ZONE_(rain|snow)_d(\d+)_s(\d+)_a([01])(?:_|$)/i);
+    const match = String(name || '').match(/^EPH_WEATHER_ZONE_(rain|snow)_d(\d+)(?:_s(\d+))?_a([01])(?:_|$)/i);
     if (!match) return null;
     return {
       kind: match[1].toLowerCase(),
       density: String(clamp(match[2], 0, 100)),
-      spacing: String(clamp(match[3], 64, 2048)),
+      spacing: String(clamp(match[3] || 192, 64, 2048)),
       startActive: match[4] !== '0'
     };
   }
@@ -149,6 +163,7 @@
     object.weatherDensity = String(clamp(extras.density ?? object.weatherDensity ?? 70, 0, 100));
     object.weatherSpacing = String(clamp(extras.spacing ?? object.weatherSpacing ?? 192, 64, 2048));
     object.weatherStartActive = extras.startActive ?? object.weatherStartActive ?? true;
+    if (extras.wrapperDmxId) object.ephWeatherWrapperDmxId = String(extras.wrapperDmxId);
     object.collision = true;
     object.blockPlayers = false;
     object.blockGrenades = false;
@@ -195,14 +210,14 @@
     markDirty?.(`Added ${info.label.toLowerCase()} zone`);
     renderTree?.();
     renderProperties?.();
-    toast?.(`${info.label} zone added — scale the box to choose where ${info.label.toLowerCase()} is generated`);
+    toast?.(`${info.label} zone added — scale the box to define the precipitation volume`);
     return object;
   }
 
-  function zoneRecords(doc) {
+  function weatherRecords(doc) {
     const zones = [];
     const generatedIds = new Set();
-    const legacy = [];
+    const native = [];
 
     for (const top of doc?.elements || []) walk(top, element => {
       if (element.className === 'CMapMesh') {
@@ -218,50 +233,56 @@
       const props = entityPropsElement(element);
       const className = lower(getProp(props, 'classname'));
       const targetname = String(getProp(props, 'targetname', ''));
-      if (targetname.startsWith(FX_PREFIX) || targetname === MAP_PARAMS_NAME) generatedIds.add(elementId(element));
-      if (className === 'func_precipitation') {
-        const precipType = String(getProp(props, 'preciptype', '0')) === '1' ? 'snow' : 'rain';
-        const children = field(element, 'children')?.value;
-        const mesh = Array.isArray(children) ? children.find(child => child?.className === 'CMapMesh') : null;
-        if (mesh) legacy.push({
-          wrapperId: elementId(element),
-          meshId: elementId(mesh),
-          kind: precipType,
-          density: String(clamp(getProp(props, 'renderamt', '70'), 0, 100)),
-          spacing: '192',
-          startActive: true,
-          name: targetname
-        });
+      const effect = lower(getProp(props, 'effect_name', ''));
+
+      if (targetname.startsWith(FX_PREFIX)
+        || /^(?:rain|snow)_\d+_fx_\d+$/i.test(targetname)
+        || targetname === MAP_PARAMS_NAME) {
+        generatedIds.add(elementId(element));
       }
+
+      if (className !== 'func_precipitation') return;
+      const subclass = lower(getProp(props, 'subclass_name', ''));
+      const preciptype = String(getProp(props, 'preciptype', ''));
+      const kind = subclass.includes('snow') || preciptype === '9' || preciptype === '1' ? 'snow' : 'rain';
+      const children = field(element, 'children')?.value;
+      const mesh = Array.isArray(children) ? children.find(child => child?.className === 'CMapMesh') : null;
+      if (!mesh) return;
+      native.push({
+        wrapperDmxId: elementId(element),
+        meshDmxId: elementId(mesh),
+        kind,
+        density: String(clamp(getProp(props, 'renderamt', '70'), 0, 100)),
+        spacing: '192',
+        startActive: String(getProp(props, 'StartDisabled', '0')) !== '1',
+        name: targetname
+      });
+
+      if (className === 'info_particle_system' && (effect === lower(WEATHER.get('particles/rain_fx/rain.vpcf')) || effect === lower(WEATHER.get('particles/rain_fx/snow.vpcf')))) generatedIds.add(elementId(element));
     });
 
-    return { zones, generatedIds, legacy };
+    return { zones, generatedIds, native };
   }
 
   function collapseWeatherOnExtract(doc, extracted) {
     if (!Array.isArray(extracted)) return extracted;
-    const records = zoneRecords(doc);
+    const records = weatherRecords(doc);
     const byDmx = new Map(extracted.filter(object => object?.dmxId).map(object => [String(object.dmxId), object]));
     const removeIds = new Set();
 
     for (const record of records.zones) {
       const object = byDmx.get(record.dmxId);
       if (!object) continue;
-      const info = record.kind === 'snow'
-        ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-        : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' };
-      decorateWeatherObject(object, info, record);
-      object.name = nextWeatherName(info.label);
+      decorateWeatherObject(object, infoForKind(record.kind), record);
+      if (!/^(?:Rain|Snow)_\d+$/i.test(String(object.name || ''))) object.name = nextWeatherName(infoForKind(record.kind).label);
     }
 
-    for (const record of records.legacy) {
-      const mesh = byDmx.get(record.meshId);
-      const wrapper = byDmx.get(record.wrapperId);
+    for (const record of records.native) {
+      const mesh = byDmx.get(record.meshDmxId);
+      const wrapper = byDmx.get(record.wrapperDmxId);
       if (!mesh) continue;
-      const info = record.kind === 'snow'
-        ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-        : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' };
-      decorateWeatherObject(mesh, info, record);
+      const info = infoForKind(record.kind);
+      decorateWeatherObject(mesh, info, { ...record, wrapperDmxId: record.wrapperDmxId });
       mesh.parent = 'world';
       mesh.ephMeshEntityChild = false;
       mesh.name = record.name || nextWeatherName(info.label);
@@ -275,131 +296,112 @@
     return extracted.filter(object => !removeIds.has(object.id));
   }
 
-  function removeGeneratedEntities(out) {
+  function removeOldGeneratedEntities(out) {
     const ids = [];
     for (const top of out?.elements || []) walk(top, element => {
       if (element.className !== 'CMapEntity') return;
       const props = entityPropsElement(element);
-      const targetname = String(getProp(props, 'targetname', ''));
       const className = lower(getProp(props, 'classname'));
-      if (targetname.startsWith(FX_PREFIX) || targetname === MAP_PARAMS_NAME || className === 'func_precipitation') ids.push(elementId(element));
+      const targetname = String(getProp(props, 'targetname', ''));
+      const effect = lower(getProp(props, 'effect_name', ''));
+      const oldWeatherFx = className === 'info_particle_system'
+        && (effect === 'particles/rain_fx/rain.vpcf' || effect === 'particles/rain_fx/snow.vpcf')
+        && (targetname.startsWith(FX_PREFIX) || /^(?:rain|snow)_\d+_fx_\d+$/i.test(targetname));
+      if (oldWeatherFx || targetname === MAP_PARAMS_NAME) ids.push(elementId(element));
     });
     for (const id of ids) detachByDmxId(out, id);
   }
 
-  function markZoneEditorOnly(out, object, info) {
-    const element = VMAP.findElementByDmxId?.(out, object.dmxId);
-    if (!element || element.className !== 'CMapMesh') return;
-    setField(element, 'editorOnly', 'bool', '1');
-    setField(element, 'physicsType', 'string', 'none');
-    const meshData = field(element, 'meshData')?.value;
-    if (meshData?.fields) setField(meshData, 'name', 'string', markerName(object, info));
+  function configureWeatherMesh(mesh, object, info) {
+    if (!mesh) return;
+    setField(mesh, 'editorOnly', 'bool', '0');
+    setField(mesh, 'physicsType', 'string', 'default');
+    setField(mesh, 'force_hidden', 'bool', object.visible === false ? '1' : '0');
+    const meshData = field(mesh, 'meshData')?.value;
+    if (meshData?.fields) {
+      setField(meshData, 'name', 'string', markerName(object, info));
+      const materials = field(meshData, 'materials');
+      if (materials) materials.value = [TOOL_MATERIAL];
+    }
+  }
+
+  function configureWrapper(wrapper, object, info) {
+    if (!wrapper) return;
+    const props = entityPropsElement(wrapper);
+    setProp(props, 'classname', 'func_precipitation');
+    setProp(props, 'targetname', object.name || nextWeatherName(info.label));
+    setProp(props, 'subclass_name', info.subclass);
+    setProp(props, 'preciptype', info.preciptype);
+    setProp(props, 'renderamt', String(Math.round(clamp(object.weatherDensity ?? 70, 0, 100))));
+    setProp(props, 'spawnflags', '1');
+    setProp(props, 'StartDisabled', object.weatherStartActive === false ? '1' : '0');
+    setField(wrapper, 'origin', 'vector3', '0 0 0');
+    setField(wrapper, 'angles', 'qangle', '0 0 0');
+    setField(wrapper, 'scales', 'vector3', '1 1 1');
+    setField(wrapper, 'editorOnly', 'bool', '0');
+    setField(wrapper, 'force_hidden', 'bool', object.visible === false ? '1' : '0');
   }
 
   function ensureRainMapParameters(out, density = 70) {
-    const added = VMAP.addEntity(out, {
-      className: 'info_map_parameters',
-      name: MAP_PARAMS_NAME,
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      scale: [1, 1, 1],
-      entityProperties: {
-        raintracetoskyenabled: '1',
-        envrainstrength: String(clamp(density, 0, 100) / 100),
-        envpuddleripplestrength: '1'
-      }
+    let found = null;
+    for (const top of out?.elements || []) walk(top, element => {
+      if (found || element.className !== 'CMapEntity') return;
+      const props = entityPropsElement(element);
+      if (lower(getProp(props, 'classname')) === 'info_map_parameters') found = element;
     });
-    return added;
-  }
 
-  function rotateLocal(local, angles) {
-    const pitch = finite(angles?.[0]) * Math.PI / 180;
-    const yaw = finite(angles?.[1]) * Math.PI / 180;
-    const roll = finite(angles?.[2]) * Math.PI / 180;
-    const cr = Math.cos(roll), sr = Math.sin(roll);
-    const cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const cy = Math.cos(yaw), sy = Math.sin(yaw);
-
-    const x1 = local[0];
-    const y1 = local[1] * cr - local[2] * sr;
-    const z1 = local[1] * sr + local[2] * cr;
-    const x2 = x1 * cp + z1 * sp;
-    const y2 = y1;
-    const z2 = -x1 * sp + z1 * cp;
-    return [x2 * cy - y2 * sy, x2 * sy + y2 * cy, z2];
-  }
-
-  function localToWorld(object, point, center) {
-    const scale = Array.isArray(object.scale) ? object.scale.map(value => finite(value, 1)) : [1, 1, 1];
-    const scaled = point.map((value, axis) => center[axis] + (value - center[axis]) * scale[axis]);
-    const rotated = rotateLocal(scaled, object.rotation || [0, 0, 0]);
-    const position = Array.isArray(object.position) ? object.position.map(value => finite(value)) : [0, 0, 0];
-    return rotated.map((value, axis) => value + position[axis]);
-  }
-
-  function axisCells(min, max, spacing) {
-    const size = Math.max(0.001, max - min);
-    const count = Math.max(1, Math.ceil(size / Math.max(1, spacing)));
-    const step = size / count;
-    return Array.from({ length: count }, (_, index) => min + step * (index + 0.5));
-  }
-
-  function emitterPlan(object) {
-    const bounds = VMAP.geometryBounds?.(object.vertices || []) || { min: [-256, -256, -128], max: [256, 256, 128], center: [0, 0, 0], size: [512, 512, 256] };
-    const density = clamp(object.weatherDensity ?? 70, 0, 100);
-    if (density <= 0) return { positions: [], spacing: clamp(object.weatherSpacing ?? 192, 64, 2048), bounds };
-
-    const requestedSpacing = clamp(object.weatherSpacing ?? 192, 64, 2048);
-    let spacing = requestedSpacing * Math.sqrt(100 / Math.max(1, density));
-    let xs, ys, layers, total;
-    do {
-      xs = axisCells(bounds.min[0], bounds.max[0], spacing);
-      ys = axisCells(bounds.min[1], bounds.max[1], spacing);
-      layers = Math.max(1, Math.min(3, Math.ceil(bounds.size[2] / Math.max(384, spacing * 1.5))));
-      total = xs.length * ys.length * layers;
-      if (total > MAX_EMITTERS) spacing *= 1.18;
-    } while (total > MAX_EMITTERS);
-
-    const positions = [];
-    const zStep = bounds.size[2] / layers;
-    for (let layer = 0; layer < layers; layer++) {
-      const z = bounds.max[2] - zStep * (layer + 0.12);
-      for (const x of xs) for (const y of ys) positions.push(localToWorld(object, [x, y, z], bounds.center));
+    if (!found) {
+      const added = VMAP.addEntity(out, {
+        className: 'info_map_parameters',
+        name: MAP_PARAMS_NAME,
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        entityProperties: {}
+      });
+      found = VMAP.findElementByDmxId?.(out, added?.dmxId) || null;
     }
-    return { positions, spacing, bounds };
-  }
 
-  function addParticleEmitter(out, object, info, position, index) {
-    const owner = String(object.dmxId || '').replace(/[^a-z0-9]/gi, '').slice(0, 10) || 'zone';
-    VMAP.addEntity(out, {
-      className: 'info_particle_system',
-      name: `${FX_PREFIX}${owner}_${String(index + 1).padStart(3, '0')}`,
-      position,
-      rotation: Array.isArray(object.rotation) ? [...object.rotation] : [0, 0, 0],
-      scale: [1, 1, 1],
-      entityProperties: {
-        effect_name: info.path,
-        start_active: object.weatherStartActive === false ? '0' : '1'
-      }
-    });
+    const props = entityPropsElement(found);
+    if (!props) return;
+    setProp(props, 'raintracetoskyenabled', '1');
+    setProp(props, 'envrainstrength', String(clamp(density, 0, 100) / 100));
+    setProp(props, 'envpuddleripplestrength', '1');
   }
 
   function exportWeather(out, objects) {
-    removeGeneratedEntities(out);
+    removeOldGeneratedEntities(out);
     let strongestRain = null;
 
     for (const object of objects || []) {
       if (!object?.ephWeatherVolume || !object?.dmxId) continue;
-      const info = classify(object.particleResource)
-        || (object.weatherKind === 'snow'
-          ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-          : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' });
+      const info = classify(object.particleResource) || infoForKind(object.weatherKind);
+      let wrapper = object.ephWeatherWrapperDmxId
+        ? VMAP.findElementByDmxId?.(out, object.ephWeatherWrapperDmxId)
+        : null;
+      let mesh = VMAP.findElementByDmxId?.(out, object.dmxId);
 
-      markZoneEditorOnly(out, object, info);
+      if (!wrapper || wrapper.className !== 'CMapEntity') {
+        mesh = detachByDmxId(out, object.dmxId) || mesh;
+        if (!mesh) continue;
+        const wrapperObject = VMAP.addEntity(out, {
+          className: 'func_precipitation',
+          name: object.name || nextWeatherName(info.label),
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          entityProperties: {}
+        });
+        wrapper = VMAP.findElementByDmxId?.(out, wrapperObject?.dmxId) || null;
+        if (!wrapper) continue;
+        childArray(wrapper).push(mesh);
+      } else {
+        mesh = VMAP.findElementByDmxId?.(out, object.dmxId) || childArray(wrapper).find(child => child?.className === 'CMapMesh');
+      }
+
+      configureWeatherMesh(mesh, object, info);
+      configureWrapper(wrapper, object, info);
       addMapAssetReference(out, info.path);
-      const plan = emitterPlan(object);
-      plan.positions.forEach((position, index) => addParticleEmitter(out, object, info, position, index));
-
       if (info.kind === 'rain') strongestRain = Math.max(Number(strongestRain) || 0, clamp(object.weatherDensity ?? 70, 0, 100));
     }
 
@@ -436,15 +438,13 @@
       const source = current?.();
       const result = raw(...args);
       if (!source?.ephWeatherVolume || !result || result.type !== 'part') return result;
-      const info = classify(source.particleResource)
-        || (source.weatherKind === 'snow'
-          ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-          : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' });
+      const info = classify(source.particleResource) || infoForKind(source.weatherKind);
       decorateWeatherObject(result, info, {
         density: source.weatherDensity,
         spacing: source.weatherSpacing,
         startActive: source.weatherStartActive
       });
+      delete result.ephWeatherWrapperDmxId;
       result.name = nextWeatherName(info.label);
       VMAP.applyObjectToDocument?.(S.doc, result);
       markDirty?.(`Duplicated as ${result.name}`);
@@ -458,10 +458,24 @@
     window.duplicate = wrapped;
   }
 
+  function installDelete() {
+    if (typeof removeSelected !== 'function' || removeSelected.__ephWeatherVolumeV27) return;
+    const raw = removeSelected;
+    const wrapped = function(...args) {
+      const object = current?.();
+      const wrapperDmxId = object?.ephWeatherVolume ? object.ephWeatherWrapperDmxId : null;
+      const result = raw(...args);
+      if (wrapperDmxId) VMAP.removeObject?.(S.doc, { dmxId: wrapperDmxId });
+      return result;
+    };
+    wrapped.__ephWeatherVolumeV27 = true;
+    wrapped.__ephPrevious = raw;
+    removeSelected = wrapped;
+    window.removeSelected = wrapped;
+  }
+
   function changeWeather(object, kind) {
-    const info = String(kind) === 'snow'
-      ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-      : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' };
+    const info = infoForKind(kind);
     pushHistory?.();
     object.weatherKind = info.kind;
     object.particleResource = info.path;
@@ -476,11 +490,7 @@
     if (!object?.ephWeatherVolume) return;
     const host = document.getElementById('propertiesContent');
     if (!host || host.querySelector('.eph-weather-volume-v27')) return;
-    const info = classify(object.particleResource)
-      || (object.weatherKind === 'snow'
-        ? { label: 'Snow', kind: 'snow', path: 'particles/rain_fx/snow.vpcf' }
-        : { label: 'Rain', kind: 'rain', path: 'particles/rain_fx/rain.vpcf' });
-    const plan = emitterPlan(object);
+    const info = classify(object.particleResource) || infoForKind(object.weatherKind);
     const badge = host.querySelector('.type-badge');
     if (badge) badge.textContent = 'weather zone';
 
@@ -491,9 +501,8 @@
       <div class="field-row"><label>Weather</label><select id="ephWeatherTypeV27" class="prop-select"><option value="rain" ${info.kind === 'rain' ? 'selected' : ''}>Rain</option><option value="snow" ${info.kind === 'snow' ? 'selected' : ''}>Snow</option></select></div>
       <div class="field-row"><label>Particle</label><input class="prop-input" value="${esc(info.path)}" readonly></div>
       <div class="field-row"><label>Density</label><input id="ephWeatherDensityV27" class="prop-input" type="number" min="0" max="100" step="1" value="${Math.round(clamp(object.weatherDensity ?? 70, 0, 100))}"></div>
-      <div class="field-row"><label>Coverage spacing</label><input id="ephWeatherSpacingV27" class="prop-input" type="number" min="64" max="2048" step="16" value="${Math.round(clamp(object.weatherSpacing ?? 192, 64, 2048))}"></div>
       <label class="toggle-row"><span>Start active</span><input id="ephWeatherStartV27" type="checkbox" ${object.weatherStartActive === false ? '' : 'checked'}></label>
-      <div class="selection-info">The scaled box is the EasyPeasyHammer weather zone. Saving generates ${plan.positions.length} hidden-in-EPH info_particle_system emitter${plan.positions.length === 1 ? '' : 's'} throughout this zone in Hammer. Move, rotate and scale this one box to control the generated weather area.</div>`;
+      <div class="selection-info">This scaled box is the real CS2 precipitation volume. EasyPeasyHammer exports one native func_precipitation using subclass <code>${esc(info.subclass)}</code>; CS2's precipitation data selects ${esc(info.path)} and applies the matching atmospheric weather modifier to players inside the volume.</div>`;
     host.appendChild(section);
 
     section.querySelector('#ephWeatherTypeV27').onchange = event => changeWeather(object, event.target.value);
@@ -501,12 +510,6 @@
       pushHistory?.();
       object.weatherDensity = String(clamp(event.target.value, 0, 100));
       markDirty?.(`Changed ${info.label.toLowerCase()} density`);
-      renderProperties?.();
-    };
-    section.querySelector('#ephWeatherSpacingV27').onchange = event => {
-      pushHistory?.();
-      object.weatherSpacing = String(clamp(event.target.value, 64, 2048));
-      markDirty?.(`Changed ${info.label.toLowerCase()} coverage spacing`);
       renderProperties?.();
     };
     section.querySelector('#ephWeatherStartV27').onchange = event => {
@@ -535,22 +538,18 @@
     installExtract();
     installPrepareForSave();
     installDuplicate();
+    installDelete();
     installProperties();
     for (const object of S?.objects || []) {
       if (!object?.ephWeatherVolume) continue;
-      const info = classify(object.particleResource);
-      if (info) decorateWeatherObject(object, info);
+      const info = classify(object.particleResource) || infoForKind(object.weatherKind);
+      decorateWeatherObject(object, info);
     }
     queueMicrotask(enhanceProperties);
   }
 
   install();
   window.addEventListener('eph-runtime-ready', install, { once: true });
-  window.EPH_WEATHER_VOLUME = {
-    classify,
-    add,
-    isWeatherPath: path => Boolean(classify(path)),
-    emitterPlan
-  };
-  console.info('[Weather Volume V27] Scaled rain/snow zones now export distributed CS2 info_particle_system emitters.');
+  window.EPH_WEATHER_VOLUME = { classify, add, isWeatherPath: path => Boolean(classify(path)) };
+  console.info('[Weather Volume V27] Native CS2 func_precipitation rain/snow volumes enabled with correct precipitation subclasses.');
 })();
