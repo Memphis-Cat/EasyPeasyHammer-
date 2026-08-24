@@ -14,6 +14,13 @@
       style.href = 'startup-modern-v53.css';
       document.head.appendChild(style);
     }
+    if (!document.querySelector('link[href="startup-modern-v54.css"]')) {
+      const refinement = document.createElement('link');
+      refinement.id = 'ephStartupModernV54Style';
+      refinement.rel = 'stylesheet';
+      refinement.href = 'startup-modern-v54.css';
+      document.head.appendChild(refinement);
+    }
 
     const screen = document.getElementById('startupScreen');
     const card = screen?.querySelector('.startup-card');
