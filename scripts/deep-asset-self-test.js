@@ -11,6 +11,8 @@ const check = (condition, message) => { if (!condition) failures.push(message); 
 
 const project = read('backend/EasyPeasyHammer.AssetHost/EasyPeasyHammer.AssetHost.csproj');
 const deep = read('backend/EasyPeasyHammer.AssetHost/DeepProgram.cs');
+const runtime = read('src/project-dialog.js');
+const mapUi = read('src/asset-map-package-ui-v52.js');
 
 check(project.includes('<StartupObject>DeepProgram</StartupObject>'), 'DeepProgram must remain the Source 2 asset backend entrypoint.');
 check(project.includes('ValveResourceFormat'), 'ValveResourceFormat must remain the compiled Source 2 resource parser.');
@@ -27,6 +29,9 @@ check(deep.includes('new GameFileLoader(Package, path)'), 'Map previews must use
 check(deep.includes('GltfModelExporter') && deep.includes('TextureExtract.ToPngImage'), 'Map model/material previews must be decoded through ValveResourceFormat.');
 check(deep.includes('deep-map-asset-index-v'), 'Deep map package indexing must remain cached across normal startups.');
 check(deep.includes('IsPackageRoot') && deep.includes('_dir.vpk'), 'Multipart VPK chunk files must not be indexed as independent packages.');
+check(runtime.includes("'asset-manager-v24.js'") && runtime.includes("'asset-map-package-ui-v52.js'"), 'Map package Asset Manager UI must load deterministically with the Asset Manager.');
+check(runtime.indexOf("'asset-manager-v24.js'") < runtime.indexOf("'asset-map-package-ui-v52.js'"), 'Map package UI must load after the Asset Manager functions it wraps.');
+check(mapUi.includes('Search assets or map name') && mapUi.includes('mapEmbeddedAssetCount'), 'Asset Manager must expose map-name search and map-package counts.');
 
 if (failures.length) {
   console.error(`Deep asset self-test failed (${failures.length}):`);
