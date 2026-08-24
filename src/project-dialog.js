@@ -205,8 +205,10 @@ const LATE_PASSES = [
   'mesh-entity-transform-v31.js',
   'mesh-entity-collision-ownership-v32.js',
   'entity-transform-persistence-v33.js',
+  'entity-model-basis-v41.js',
   'selection-surface-move-v39.js',
   'select-click-capture-v40.js',
+  'hammer-placement-gizmo-v41.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
