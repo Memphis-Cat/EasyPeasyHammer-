@@ -19,6 +19,7 @@ sealed class AssetService : IDisposable
     readonly List<AssetItem> sounds = [];
     readonly List<AssetItem> particles = [];
     readonly Dictionary<string, AssetItem> unique = new(StringComparer.OrdinalIgnoreCase);
+    readonly List<string> indexedMounts = [];
     GameFileLoader? loader;
     string? cs2Root;
 
@@ -38,6 +39,7 @@ sealed class AssetService : IDisposable
         soundCount = sounds.Count,
         particleCount = particles.Count,
         indexedVpkCount = indexPackages.Count,
+        indexedMounts = indexedMounts.ToArray(),
         cacheRoot
     };
 
@@ -60,6 +62,7 @@ sealed class AssetService : IDisposable
             sounds.Clear();
             particles.Clear();
             unique.Clear();
+            indexedMounts.Clear();
 
             var resolved = ResolveCs2Root(root) ?? throw new DirectoryNotFoundException("The selected folder is not a CS2 installation.");
             var gameInfo = Path.Combine(resolved, "game", "csgo", "gameinfo.gi");
@@ -67,8 +70,7 @@ sealed class AssetService : IDisposable
             cs2Root = resolved;
 
             var gameRoot = Path.Combine(resolved, "game");
-            IndexVpkPackages(gameRoot);
-            IndexLooseGameMounts(gameRoot);
+            IndexHammerMounts(gameRoot, gameInfo);
             return Status();
         }
         catch (Exception ex)
@@ -77,36 +79,110 @@ sealed class AssetService : IDisposable
         }
     }
 
-    void IndexVpkPackages(string gameRoot)
+    void IndexHammerMounts(string gameRoot, string gameInfo)
     {
-        if (!Directory.Exists(gameRoot)) return;
-        string[] vpks;
-        try
+        foreach (var mount in GameSearchMounts(gameRoot, gameInfo))
         {
-            // Source 2 game mounts use *_dir.vpk as the directory/index file.
-            // Index every mounted-style directory VPK under game so the browser
-            // is not limited to a hard-coded subset of CS2 packages.
-            vpks = Directory.EnumerateFiles(gameRoot, "*_dir.vpk", SearchOption.AllDirectories)
-                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-        }
-        catch
-        {
-            return;
-        }
+            var mountName = Normalize(Path.GetRelativePath(gameRoot, mount));
+            indexedMounts.Add(mountName);
 
-        foreach (var vpk in vpks)
-        {
+            // Loose files override packaged files inside the same Source 2 mount.
+            IndexLooseFiles(mount, $"{mountName}-loose");
+
+            string[] packages;
             try
             {
-                var package = new Package();
-                package.Read(vpk);
-                indexPackages.Add(package);
-                var source = Normalize(Path.GetRelativePath(gameRoot, vpk));
-                IndexPackage(package, source);
+                packages = Directory.EnumerateFiles(mount, "*_dir.vpk", SearchOption.TopDirectoryOnly)
+                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
             }
-            catch { }
+            catch { continue; }
+
+            foreach (var vpk in packages)
+            {
+                try
+                {
+                    var package = new Package();
+                    package.Read(vpk);
+                    indexPackages.Add(package);
+                    IndexPackage(package, Normalize(Path.GetRelativePath(gameRoot, vpk)));
+                }
+                catch { }
+            }
         }
+    }
+
+    static IEnumerable<string> GameSearchMounts(string gameRoot, string gameInfo)
+    {
+        var output = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            var clean = value.Trim().Trim('"').Replace('\\', '/');
+            if (clean.StartsWith("|gameinfo_path|", StringComparison.OrdinalIgnoreCase))
+                clean = "csgo/" + clean.Substring("|gameinfo_path|".Length).TrimStart('/', '.');
+            if (clean.Contains('|') || clean.Contains('*') || clean.Contains('!')) return;
+            var candidate = Path.GetFullPath(Path.Combine(gameRoot, clean.Replace('/', Path.DirectorySeparatorChar)));
+            if (!Directory.Exists(candidate) || !seen.Add(candidate)) return;
+            output.Add(candidate);
+        }
+
+        try
+        {
+            var text = File.ReadAllText(gameInfo);
+            var block = ExtractNamedBraceBlock(text, "SearchPaths");
+            foreach (var raw in block.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+            {
+                var line = StripLineComment(raw).Trim();
+                var match = Regex.Match(line, "^(?:Game(?:_LowViolence)?|Mod)\\s+(?:\\\"([^\\\"]+)\\\"|([^\\s{}]+))", RegexOptions.IgnoreCase);
+                if (match.Success) Add(match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value);
+            }
+        }
+        catch { }
+
+        // These are the stock CS2/Hammer mounts. They are only appended when
+        // they actually exist, and never outrank SearchPaths entries above.
+        foreach (var fallback in new[] { "csgo", "csgo_imported", "csgo_core", "core", "sdktools" }) Add(fallback);
+        return output;
+    }
+
+    static string ExtractNamedBraceBlock(string text, string name)
+    {
+        var match = Regex.Match(text, $"\\b{Regex.Escape(name)}\\b", RegexOptions.IgnoreCase);
+        if (!match.Success) return "";
+        var open = text.IndexOf('{', match.Index + match.Length);
+        if (open < 0) return "";
+        var depth = 0;
+        var quoted = false;
+        var escaped = false;
+        for (var i = open; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (escaped) { escaped = false; continue; }
+            if (quoted && c == '\\') { escaped = true; continue; }
+            if (c == '"') { quoted = !quoted; continue; }
+            if (quoted) continue;
+            if (c == '{') depth++;
+            else if (c == '}' && --depth == 0) return text[(open + 1)..i];
+        }
+        return text[(open + 1)..];
+    }
+
+    static string StripLineComment(string line)
+    {
+        var quoted = false;
+        var escaped = false;
+        for (var i = 0; i < line.Length - 1; i++)
+        {
+            var c = line[i];
+            if (escaped) { escaped = false; continue; }
+            if (quoted && c == '\\') { escaped = true; continue; }
+            if (c == '"') { quoted = !quoted; continue; }
+            if (!quoted && c == '/' && line[i + 1] == '/') return line[..i];
+        }
+        return line;
     }
 
     void IndexPackage(Package package, string source)
@@ -117,20 +193,6 @@ sealed class AssetService : IDisposable
         {
             var compiled = Normalize(entry.GetFullPath());
             AddCompiledAsset(compiled, source);
-        }
-    }
-
-    void IndexLooseGameMounts(string gameRoot)
-    {
-        if (!Directory.Exists(gameRoot)) return;
-        string[] mounts;
-        try { mounts = Directory.EnumerateDirectories(gameRoot).ToArray(); }
-        catch { return; }
-
-        foreach (var mount in mounts)
-        {
-            var source = $"{Path.GetFileName(mount)}-loose";
-            IndexLooseFiles(mount, source);
         }
     }
 
@@ -205,91 +267,165 @@ sealed class AssetService : IDisposable
         if (q.Length > 0)
         {
             var words = q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            result = result.Where(x => words.All(w => x.path.Contains(w, StringComparison.OrdinalIgnoreCase) || x.name.Contains(w, StringComparison.OrdinalIgnoreCase) || x.source.Contains(w, StringComparison.OrdinalIgnoreCase)));
+            result = result.Where(item => words.All(word =>
+                item.path.Contains(word, StringComparison.OrdinalIgnoreCase)
+                || item.name.Contains(word, StringComparison.OrdinalIgnoreCase)));
         }
 
         var max = Math.Clamp(limit, 1, 5000);
-        var items = result.OrderBy(x => x.path.Length).ThenBy(x => x.path, StringComparer.OrdinalIgnoreCase).Take(max).ToArray();
+        var items = result
+            .OrderBy(item => SearchScore(item, q))
+            .ThenBy(item => item.path.Length)
+            .ThenBy(item => item.path, StringComparer.OrdinalIgnoreCase)
+            .Take(max)
+            .ToArray();
         return new { ok = true, items, total = source.Count, returned = items.Length, kind = normalizedKind };
+    }
+
+    static int SearchScore(AssetItem item, string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return 10;
+        var q = query.Trim();
+        var stem = Path.GetFileNameWithoutExtension(item.path);
+        if (stem.Equals(q, StringComparison.OrdinalIgnoreCase) || item.name.Equals(q, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (stem.StartsWith(q, StringComparison.OrdinalIgnoreCase) || item.name.StartsWith(q, StringComparison.OrdinalIgnoreCase)) return 1;
+        if (stem.Contains(q, StringComparison.OrdinalIgnoreCase) || item.name.Contains(q, StringComparison.OrdinalIgnoreCase)) return 2;
+        return 3;
     }
 
     public object MaterialPreview(string materialPath)
     {
         if (loader is null) return new { ok = false, error = "CS2 assets are not loaded." };
-        try
+        var requested = NormalizeSourcePath(materialPath, ".vmat");
+        var materialFound = false;
+        string? lastError = null;
+
+        foreach (var normalized in ResourceCandidates(requested, ".vmat", "materials"))
         {
-            var normalized = NormalizeSourcePath(materialPath, ".vmat");
-            var key = Hash(normalized);
-            var outPath = Path.Combine(cacheRoot, "materials", key + ".png");
-
-            using var materialResource = loader.LoadFileCompiled(normalized);
-            if (materialResource?.DataBlock is not Material material) return new { ok = false, error = "Material could not be decoded." };
-
-            string? texturePath = null;
-            foreach (var preferred in new[] { "g_tColor", "g_tColor1", "g_tBaseColor", "g_tDiffuse", "g_tAlbedo" })
-                if (material.TextureParams.TryGetValue(preferred, out texturePath) && !string.IsNullOrWhiteSpace(texturePath)) break;
-            texturePath ??= material.TextureParams.Values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
-            if (string.IsNullOrWhiteSpace(texturePath)) return new { ok = false, error = "Material has no previewable texture." };
-
-            var sourceTexture = NormalizeSourcePath(texturePath, ".vtex");
-            using var textureResource = loader.LoadFileCompiled(sourceTexture);
-            if (textureResource?.DataBlock is not Texture texture) return new { ok = false, error = "Material texture could not be decoded." };
-
-            var width = Math.Max(1, (int)texture.ActualWidth);
-            var height = Math.Max(1, (int)texture.ActualHeight);
-            if (!File.Exists(outPath))
+            try
             {
-                using var bitmap = texture.GenerateBitmap();
-                var png = TextureExtract.ToPngImage(bitmap);
-                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                File.WriteAllBytes(outPath, png);
+                using var materialResource = loader.LoadFileCompiled(normalized);
+                if (materialResource?.DataBlock is not Material material) continue;
+                materialFound = true;
+
+                var textureChoices = new List<string>();
+                foreach (var preferred in new[] { "g_tColor", "g_tColor1", "g_tBaseColor", "g_tDiffuse", "g_tAlbedo", "TextureColor", "TextureBase" })
+                    if (material.TextureParams.TryGetValue(preferred, out var value) && !string.IsNullOrWhiteSpace(value)) textureChoices.Add(value);
+                foreach (var pair in material.TextureParams)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Value)) continue;
+                    if (Regex.IsMatch(pair.Key, "color|albedo|diffuse|base", RegexOptions.IgnoreCase) && !textureChoices.Any(x => x.Equals(pair.Value, StringComparison.OrdinalIgnoreCase)))
+                        textureChoices.Add(pair.Value);
+                }
+                foreach (var value in material.TextureParams.Values)
+                    if (!string.IsNullOrWhiteSpace(value) && !textureChoices.Any(x => x.Equals(value, StringComparison.OrdinalIgnoreCase))) textureChoices.Add(value);
+
+                foreach (var texturePath in textureChoices)
+                {
+                    foreach (var sourceTexture in ResourceCandidates(texturePath, ".vtex", "materials"))
+                    {
+                        try
+                        {
+                            using var textureResource = loader.LoadFileCompiled(sourceTexture);
+                            if (textureResource?.DataBlock is not Texture texture) continue;
+
+                            var cacheKey = Hash($"{normalized}|{sourceTexture}");
+                            var outPath = Path.Combine(cacheRoot, "materials", cacheKey + ".png");
+                            var width = Math.Max(1, (int)texture.ActualWidth);
+                            var height = Math.Max(1, (int)texture.ActualHeight);
+                            if (!File.Exists(outPath))
+                            {
+                                using var bitmap = texture.GenerateBitmap();
+                                var png = TextureExtract.ToPngImage(bitmap);
+                                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+                                File.WriteAllBytes(outPath, png);
+                            }
+
+                            return new
+                            {
+                                ok = true,
+                                path = outPath,
+                                requested,
+                                resource = normalized,
+                                texture = sourceTexture,
+                                shader = material.ShaderName,
+                                width,
+                                height
+                            };
+                        }
+                        catch (Exception ex) { lastError = ex.Message; }
+                    }
+                }
+                lastError = "Material exists, but none of its texture resources could be decoded for the editor preview.";
             }
+            catch (Exception ex) { lastError = ex.Message; }
+        }
 
-            return new
-            {
-                ok = true,
-                path = outPath,
-                resource = normalized,
-                texture = sourceTexture,
-                shader = material.ShaderName,
-                width,
-                height
-            };
-        }
-        catch (Exception ex)
+        return new
         {
-            return new { ok = false, error = ex.Message };
-        }
+            ok = false,
+            found = materialFound,
+            requested,
+            error = materialFound ? lastError ?? "Material has no previewable color texture." : lastError ?? "Material could not be decoded from the mounted CS2 search paths."
+        };
     }
 
     public object ModelPreview(string modelPath)
     {
         if (loader is null) return new { ok = false, error = "CS2 assets are not loaded." };
-        try
+        foreach (var normalized in ResourceCandidates(modelPath, ".vmdl", null))
         {
-            var normalized = NormalizeSourcePath(modelPath, ".vmdl");
-            var key = Hash(normalized);
-            var outPath = Path.Combine(cacheRoot, "models", key + ".glb");
-            if (File.Exists(outPath)) return new { ok = true, path = outPath, resource = normalized, scale = 39.37007874015748 };
-
-            using var resource = loader.LoadFileCompiled(normalized);
-            if (resource is null || !GltfModelExporter.CanExport(resource)) return new { ok = false, error = "Model could not be decoded." };
-            Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-            var exporter = new GltfModelExporter(loader)
+            try
             {
-                ExportMaterials = true,
-                AdaptTextures = true,
-                ExportAnimations = false,
-                SatelliteImages = false,
-                ProgressReporter = new Progress<string>(_ => { })
-            };
-            exporter.Export(resource, outPath);
-            return new { ok = true, path = outPath, resource = normalized, scale = 39.37007874015748 };
+                var key = Hash(normalized);
+                var outPath = Path.Combine(cacheRoot, "models", key + ".glb");
+                if (File.Exists(outPath)) return new { ok = true, path = outPath, resource = normalized, scale = 39.37007874015748 };
+
+                using var resource = loader.LoadFileCompiled(normalized);
+                if (resource is null || !GltfModelExporter.CanExport(resource)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
+                var exporter = new GltfModelExporter(loader)
+                {
+                    ExportMaterials = true,
+                    AdaptTextures = true,
+                    ExportAnimations = false,
+                    SatelliteImages = false,
+                    ProgressReporter = new Progress<string>(_ => { })
+                };
+                exporter.Export(resource, outPath);
+                return new { ok = true, path = outPath, resource = normalized, scale = 39.37007874015748 };
+            }
+            catch { }
         }
-        catch (Exception ex)
+        return new { ok = false, error = "Model could not be decoded from the mounted CS2 search paths." };
+    }
+
+    static IEnumerable<string> ResourceCandidates(string value, string extension, string? conventionalPrefix)
+    {
+        var normalized = NormalizeSourcePath(value, extension);
+        var output = new List<string>();
+        void Add(string candidate)
         {
-            return new { ok = false, error = ex.Message };
+            candidate = NormalizeSourcePath(candidate, extension);
+            if (!output.Any(x => x.Equals(candidate, StringComparison.OrdinalIgnoreCase))) output.Add(candidate);
         }
+
+        if (!string.IsNullOrWhiteSpace(conventionalPrefix))
+        {
+            var prefix = conventionalPrefix.Trim('/', '\\') + "/";
+            if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                Add(normalized);
+                Add(normalized[prefix.Length..]);
+            }
+            else
+            {
+                Add(prefix + normalized);
+                Add(normalized);
+            }
+        }
+        else Add(normalized);
+        return output;
     }
 
     public object HammerInfo()
@@ -353,9 +489,9 @@ sealed class AssetService : IDisposable
             try
             {
                 var text = File.ReadAllText(vdf);
-                foreach (Match m in Regex.Matches(text, "\\\"path\\\"\\s*\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase))
+                foreach (Match match in Regex.Matches(text, "\\\"path\\\"\\s*\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase))
                 {
-                    var library = m.Groups[1].Value.Replace("\\\\", "\\");
+                    var library = match.Groups[1].Value.Replace("\\\\", "\\");
                     guesses.Add(Path.Combine(library, "steamapps", "common", "Counter-Strike Global Offensive"));
                 }
             }
@@ -407,7 +543,7 @@ static class Program
                 var a = request.args;
                 result = (request.command ?? "").ToLowerInvariant() switch
                 {
-                    "ping" => new { ok = true, version = "1.1" },
+                    "ping" => new { ok = true, version = "1.2" },
                     "status" => service.Status(),
                     "detect" => service.Detect(GetString(a, "path")),
                     "set-path" => service.Load(GetString(a, "path") ?? ""),
