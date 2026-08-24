@@ -226,6 +226,16 @@
   window.addEventListener('eph3d-ready', event => install(event.detail));
   window.addEventListener('eph-runtime-ready', () => install(), { once: true });
 
+  // Solid Entity V30 has a few delayed startup repair passes that intentionally
+  // detach the generic wrapper gizmo. Keep the child-geometry proxy authoritative
+  // during that bounded startup window so the tool never flashes back to 0,0,0.
+  const startupGuardUntil = performance.now() + 8000;
+  const startupGuard = () => {
+    attachProxy(state()?.viewport || window.EPH3D);
+    if (performance.now() < startupGuardUntil) requestAnimationFrame(startupGuard);
+  };
+  requestAnimationFrame(startupGuard);
+
   let checks = 0;
   const guard = setInterval(() => {
     checks++;
