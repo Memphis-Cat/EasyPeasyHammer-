@@ -10,6 +10,12 @@ set "NPM10_DIR=%CD%\.runtime\npm10"
 set "NPM10_BIN=%NPM10_DIR%\node_modules\.bin"
 set "NPM10_CLI=%NPM10_DIR%\node_modules\npm\bin\npm-cli.js"
 
+echo Checking tracked source files for leftover Git conflict markers...
+if exist "scripts\recover-git-conflict-markers.js" (
+  node scripts\recover-git-conflict-markers.js
+  if errorlevel 1 goto error
+)
+
 set "EPH_NO_PAUSE=1"
 call Build_Backend.bat
 set "BACKEND_CODE=%ERRORLEVEL%"
