@@ -10,7 +10,7 @@
   const BOX_NAME = 'EPH_HammerSelectionBoundsV46';
   const DIMENSION_NAME = 'EPH_HammerSelectionDimensionsV46';
   const SELECTION_YELLOW = 0xffd84d;
-  const FILL_OPACITY = 0.10;
+  const FILL_OPACITY = 0.055;
 
   let installedViewport = null;
   let highlightRoot = null;
@@ -27,9 +27,6 @@
 
   function logicalSelectionId(viewport) {
     const s = state();
-    // An explicit null in editor state means deselected. Do not fall back to a
-    // stale viewport.selectedId, otherwise the yellow selection can remain after
-    // clicking empty space.
     if (s && Object.prototype.hasOwnProperty.call(s, 'selectedId')) return s.selectedId ?? null;
     return viewport?.selectedId ?? null;
   }
@@ -140,8 +137,11 @@
     return new T.MeshBasicMaterial({
       color: SELECTION_YELLOW,
       transparent: true,
-      opacity: 1,
-      depthTest: false,
+      opacity: 0.98,
+      // This MUST depth-test against the real selected model. With depthTest
+      // disabled, the enlarged back-face copy paints the entire model solid
+      // yellow instead of only showing around its silhouette.
+      depthTest: true,
       depthWrite: false,
       side: T.BackSide,
       toneMapped: false,
@@ -149,7 +149,7 @@
   }
 
   function lineMaterial(T) {
-    return new T.LineBasicMaterial({ color: SELECTION_YELLOW, transparent: true, opacity: 1, depthTest: false, depthWrite: false, toneMapped: false });
+    return new T.LineBasicMaterial({ color: SELECTION_YELLOW, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false, toneMapped: false });
   }
 
   function spriteMaterial(T, original = null) {
@@ -157,8 +157,8 @@
       map: original?.map || null,
       color: SELECTION_YELLOW,
       transparent: true,
-      opacity: 0.45,
-      depthTest: false,
+      opacity: 0.30,
+      depthTest: true,
       depthWrite: false,
       toneMapped: false,
     });
@@ -236,8 +236,6 @@
         removeNonVisualChildren(outline);
         const count = styleClone(outline, 'outline');
         if (count) {
-          // Very small back-face expansion creates Hammer's yellow silhouette
-          // around props/models while the real object remains unchanged.
           outline.scale.multiplyScalar(1.006);
           overlay.add(outline);
           visible += count;
@@ -290,8 +288,6 @@
     dimensionRoot = unpickable(new T.Group());
     dimensionRoot.name = DIMENSION_NAME;
 
-    // Hammer's dimension text is axis-colored while the actual selection is
-    // yellow. X=red, Y=green, Z=blue.
     const specs = [
       ['x', '#ff5b5b'],
       ['y', '#76e05d'],
@@ -468,5 +464,5 @@
   }, 250);
 
   window.EPH_HAMMER_SELECTION_V46 = { install, rebuild, clear: clearHighlight };
-  console.info('[Hammer Selection V46] Yellow silhouette, low-opacity yellow fill, dimensions and deselection parity installed.');
+  console.info('[Hammer Selection V46] Yellow silhouette with true low-opacity yellow tint, dimensions and deselection parity installed.');
 })();
