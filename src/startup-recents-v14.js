@@ -8,6 +8,52 @@
   const api = window.easyPeasyHammer;
   if (!api) return;
 
+  function installLeanSessionSnapshots() {
+    let currentSnapshot = null;
+    try { currentSnapshot = typeof uiSnapshot === 'function' ? uiSnapshot : window.uiSnapshot; } catch { currentSnapshot = window.uiSnapshot; }
+    if (typeof currentSnapshot !== 'function' || currentSnapshot.__ephLeanRecentV14) return;
+
+    const leanSnapshot = function() {
+      const dirty = Boolean(S?.dirty);
+      const snapshot = {
+        phase: 3,
+        tool: S.tool,
+        assetTab: S.assetTab,
+        bottomTab: S.bottomTab,
+        selectedId: S.selectedId,
+        selectedFaces: [...S.selectedFaces],
+        grid: S.grid,
+        gridSize: S.gridSize,
+        snap: S.snap,
+        angleSnap: S.angleSnap,
+        space: S.space,
+        view: S.view,
+        shading: S.shading,
+        cameraState: S.viewport?.getCameraState?.() || S.camera,
+        objectExtras: extras(),
+        clipAxis: S.clipAxis,
+        clipPlane: S.clipPlane,
+        clipPositive: S.clipPositive,
+        dirty,
+      };
+
+      // A clean project already exists verbatim on disk. The old snapshot path
+      // serialized the complete VMAP on every autosave anyway, producing giant
+      // session.json files that then had to be parsed and copied back through
+      // IPC just to open a recent project. Preserve a full snapshot only when
+      // there are actual unsaved map edits to recover.
+      if (dirty) snapshot.vmapText = workingText();
+      return snapshot;
+    };
+
+    leanSnapshot.__ephLeanRecentV14 = true;
+    leanSnapshot.__ephPrevious = currentSnapshot;
+    try { uiSnapshot = leanSnapshot; } catch {}
+    window.uiSnapshot = leanSnapshot;
+  }
+
+  installLeanSessionSnapshots();
+
   const style = document.createElement('link');
   style.rel = 'stylesheet';
   style.href = 'startup-recents-v14.css';
@@ -57,6 +103,7 @@
   if (!list) return;
   let renderToken = 0;
   let pendingDelete = null;
+  let openingPath = null;
 
   let deleteDialog = document.getElementById('ephDeleteMapDialog');
   if (!deleteDialog) {
@@ -112,23 +159,40 @@
     }
   }
 
+  function nextPaint() {
+    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+
   async function openRecent(entry, button) {
     const vmapPath = entry?.project?.vmapPath;
-    if (!vmapPath || typeof window.loadProject !== 'function') return;
+    if (!vmapPath || typeof window.loadProject !== 'function' || openingPath) return;
+    openingPath = vmapPath;
     button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    const time = button.querySelector('.eph-recent-map-time');
+    const oldTime = time?.textContent || '';
+    if (time) time.textContent = 'Opening…';
+
     try {
+      // Paint the click state before any old/large VMAP snapshot has to be
+      // decoded. This also makes a legitimately large map feel responsive.
+      await nextPaint();
       const recent = await api.openRecentProject?.(vmapPath);
       if (!recent?.project) {
         window.toast?.('That recent map is no longer available');
         await renderRecentMaps();
         return;
       }
+      await nextPaint();
       const loaded = await window.loadProject(recent.project, recent.uiState || null);
       if (!loaded) window.toast?.('Could not open that map');
     } catch (error) {
       window.toast?.(error?.message || 'Could not open that map');
     } finally {
+      openingPath = null;
       button.disabled = false;
+      button.removeAttribute('aria-busy');
+      if (time?.isConnected) time.textContent = oldTime;
     }
   }
 
