@@ -24,11 +24,16 @@
     const rows = [...tree.querySelectorAll('.tree-row[data-object-id]')];
     if (!rows.length) return false;
     let found = S.selectedId === 'world';
+    const multi = new Set(Array.isArray(S.multiSelectedIds) ? S.multiSelectedIds : []);
+
     for (const row of rows) {
       const id = row.dataset.objectId;
-      const selected = id === S.selectedId;
-      row.classList.toggle('selected', selected);
-      if (selected) {
+      const primary = id === S.selectedId;
+      const selected = multi.has(id);
+      row.classList.toggle('selected', primary);
+      row.classList.toggle('eph-multi-selected', selected);
+      row.classList.toggle('eph-multi-primary', selected && primary);
+      if (primary) {
         found = true;
         const object = S.objects.find(item => item.id === id);
         if (object) {
@@ -67,6 +72,11 @@
         queueMicrotask(() => window.EPH_MULTI_SELECTION?.refresh?.());
         return result;
       }
+
+      // The previous fast path only refreshed the primary .selected class.
+      // Secondary Scene selections could therefore remain blue after being
+      // deselected, or fail to turn blue until the whole 3,800-row tree rebuilt.
+      queueMicrotask(() => window.EPH_MULTI_SELECTION?.refresh?.());
       return undefined;
     };
     wrapped.__ephLargeMapUiFastV27 = true;
@@ -74,11 +84,9 @@
     renderTree = wrapped;
     window.renderTree = wrapped;
     installed = true;
-    console.info('[Large Map UI V27] Scene tree selection updates no longer rebuild thousands of DOM rows.');
+    console.info('[Large Map UI V27] Scene tree primary and multi-selection state stay synchronized without rebuilding thousands of rows.');
     return true;
   }
 
-  // Install after multi-select has created row object ids. Its late wrapper can
-  // safely sit outside this one; it will only annotate the rows we kept.
   setTimeout(install, 3200);
 })();
