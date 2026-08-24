@@ -326,6 +326,9 @@
     if (checks >= 80) clearInterval(guard);
   }, 250);
 
-  window.addEventListener('beforeunload', () => { if (railFrame) cancelAnimationFrame(railFrame); }, { once: true });
+  // The browser automatically discards page-owned requestAnimationFrame callbacks
+  // when the renderer document unloads. Do not cancel a frame from a late pass:
+  // the editor integrity audit intentionally treats cancelAnimationFrame calls
+  // outside the core viewport/watchdog as possible render-loop sabotage.
   report('Center-POV surface placement enabled for new Parts, Props, Entities and particle/weather creation paths.');
 })();
