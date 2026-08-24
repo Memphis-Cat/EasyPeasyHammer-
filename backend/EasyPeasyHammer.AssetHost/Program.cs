@@ -16,6 +16,8 @@ sealed class AssetService : IDisposable
     readonly List<Package> indexPackages = [];
     readonly List<AssetItem> materials = [];
     readonly List<AssetItem> models = [];
+    readonly List<AssetItem> sounds = [];
+    readonly List<AssetItem> particles = [];
     readonly Dictionary<string, AssetItem> unique = new(StringComparer.OrdinalIgnoreCase);
     GameFileLoader? loader;
     string? cs2Root;
@@ -33,6 +35,9 @@ sealed class AssetService : IDisposable
         cs2Root,
         materialCount = materials.Count,
         modelCount = models.Count,
+        soundCount = sounds.Count,
+        particleCount = particles.Count,
+        indexedVpkCount = indexPackages.Count,
         cacheRoot
     };
 
@@ -52,6 +57,8 @@ sealed class AssetService : IDisposable
             loader = null;
             materials.Clear();
             models.Clear();
+            sounds.Clear();
+            particles.Clear();
             unique.Clear();
 
             var resolved = ResolveCs2Root(root) ?? throw new DirectoryNotFoundException("The selected folder is not a CS2 installation.");
@@ -59,27 +66,46 @@ sealed class AssetService : IDisposable
             loader = new GameFileLoader(null, gameInfo);
             cs2Root = resolved;
 
-            var roots = new[] { "csgo", "csgo_imported", "csgo_core", "core" };
-            foreach (var mod in roots)
-            {
-                var vpk = Path.Combine(resolved, "game", mod, "pak01_dir.vpk");
-                if (!File.Exists(vpk)) continue;
-                try
-                {
-                    var package = new Package();
-                    package.Read(vpk);
-                    indexPackages.Add(package);
-                    IndexPackage(package, mod);
-                }
-                catch { }
-            }
-
-            IndexLooseFiles(Path.Combine(resolved, "game", "csgo"), "csgo-loose");
+            var gameRoot = Path.Combine(resolved, "game");
+            IndexVpkPackages(gameRoot);
+            IndexLooseGameMounts(gameRoot);
             return Status();
         }
         catch (Exception ex)
         {
             return new { ok = false, error = ex.Message };
+        }
+    }
+
+    void IndexVpkPackages(string gameRoot)
+    {
+        if (!Directory.Exists(gameRoot)) return;
+        string[] vpks;
+        try
+        {
+            // Source 2 game mounts use *_dir.vpk as the directory/index file.
+            // Index every mounted-style directory VPK under game so the browser
+            // is not limited to a hard-coded subset of CS2 packages.
+            vpks = Directory.EnumerateFiles(gameRoot, "*_dir.vpk", SearchOption.AllDirectories)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            return;
+        }
+
+        foreach (var vpk in vpks)
+        {
+            try
+            {
+                var package = new Package();
+                package.Read(vpk);
+                indexPackages.Add(package);
+                var source = Normalize(Path.GetRelativePath(gameRoot, vpk));
+                IndexPackage(package, source);
+            }
+            catch { }
         }
     }
 
@@ -94,17 +120,32 @@ sealed class AssetService : IDisposable
         }
     }
 
+    void IndexLooseGameMounts(string gameRoot)
+    {
+        if (!Directory.Exists(gameRoot)) return;
+        string[] mounts;
+        try { mounts = Directory.EnumerateDirectories(gameRoot).ToArray(); }
+        catch { return; }
+
+        foreach (var mount in mounts)
+        {
+            var source = $"{Path.GetFileName(mount)}-loose";
+            IndexLooseFiles(mount, source);
+        }
+    }
+
     void IndexLooseFiles(string root, string source)
     {
         if (!Directory.Exists(root)) return;
-        try
+        foreach (var pattern in new[] { "*.vmat_c", "*.vmdl_c", "*.vsnd_c", "*.vpcf_c" })
         {
-            foreach (var file in Directory.EnumerateFiles(root, "*.vmat_c", SearchOption.AllDirectories).Take(30000))
-                AddCompiledAsset(Normalize(Path.GetRelativePath(root, file)), source);
-            foreach (var file in Directory.EnumerateFiles(root, "*.vmdl_c", SearchOption.AllDirectories).Take(30000))
-                AddCompiledAsset(Normalize(Path.GetRelativePath(root, file)), source);
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(root, pattern, SearchOption.AllDirectories))
+                    AddCompiledAsset(Normalize(Path.GetRelativePath(root, file)), source);
+            }
+            catch { }
         }
-        catch { }
     }
 
     void AddCompiledAsset(string compiledPath, string source)
@@ -121,28 +162,55 @@ sealed class AssetService : IDisposable
             kind = "model";
             sourcePath = compiledPath[..^2];
         }
+        else if (compiledPath.EndsWith(".vsnd_c", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = "sound";
+            sourcePath = compiledPath[..^2];
+        }
+        else if (compiledPath.EndsWith(".vpcf_c", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = "particle";
+            sourcePath = compiledPath[..^2];
+        }
         else return;
 
-        if (unique.ContainsKey(sourcePath)) return;
+        var uniqueKey = $"{kind}:{sourcePath}";
+        if (unique.ContainsKey(uniqueKey)) return;
         var name = Path.GetFileNameWithoutExtension(sourcePath).Replace('_', ' ');
         var item = new AssetItem(name, sourcePath, kind, source);
-        unique[sourcePath] = item;
-        if (kind == "material") materials.Add(item); else models.Add(item);
+        unique[uniqueKey] = item;
+        switch (kind)
+        {
+            case "material": materials.Add(item); break;
+            case "model": models.Add(item); break;
+            case "sound": sounds.Add(item); break;
+            case "particle": particles.Add(item); break;
+        }
     }
 
     public object Search(string kind, string? query, int limit)
     {
         if (loader is null) return new { ok = false, error = "CS2 assets are not loaded.", items = Array.Empty<AssetItem>() };
         var q = (query ?? "").Trim();
-        var source = kind.Equals("model", StringComparison.OrdinalIgnoreCase) || kind.Equals("models", StringComparison.OrdinalIgnoreCase) ? models : materials;
+        var normalizedKind = (kind ?? "material").Trim().ToLowerInvariant();
+        var source = normalizedKind switch
+        {
+            "model" or "models" or "prop" or "props" => models,
+            "sound" or "sounds" => sounds,
+            "particle" or "particles" or "vfx" => particles,
+            _ => materials
+        };
+
         IEnumerable<AssetItem> result = source;
         if (q.Length > 0)
         {
             var words = q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            result = result.Where(x => words.All(w => x.path.Contains(w, StringComparison.OrdinalIgnoreCase) || x.name.Contains(w, StringComparison.OrdinalIgnoreCase)));
+            result = result.Where(x => words.All(w => x.path.Contains(w, StringComparison.OrdinalIgnoreCase) || x.name.Contains(w, StringComparison.OrdinalIgnoreCase) || x.source.Contains(w, StringComparison.OrdinalIgnoreCase)));
         }
-        var items = result.OrderBy(x => x.path.Length).ThenBy(x => x.path, StringComparer.OrdinalIgnoreCase).Take(Math.Clamp(limit, 1, 800)).ToArray();
-        return new { ok = true, items, total = source.Count };
+
+        var max = Math.Clamp(limit, 1, 5000);
+        var items = result.OrderBy(x => x.path.Length).ThenBy(x => x.path, StringComparer.OrdinalIgnoreCase).Take(max).ToArray();
+        return new { ok = true, items, total = source.Count, returned = items.Length, kind = normalizedKind };
     }
 
     public object MaterialPreview(string materialPath)
@@ -339,7 +407,7 @@ static class Program
                 var a = request.args;
                 result = (request.command ?? "").ToLowerInvariant() switch
                 {
-                    "ping" => new { ok = true, version = "1.0" },
+                    "ping" => new { ok = true, version = "1.1" },
                     "status" => service.Status(),
                     "detect" => service.Detect(GetString(a, "path")),
                     "set-path" => service.Load(GetString(a, "path") ?? ""),
