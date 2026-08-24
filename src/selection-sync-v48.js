@@ -30,8 +30,10 @@
 
   function looksCanonical(id) {
     const s = state();
-    if (!id) return !s?.selectedId && !(s?.multiSelectedIds?.length);
     const ids = Array.isArray(s?.multiSelectedIds) ? s.multiSelectedIds : [];
+    if (!id) return !s?.selectedId && !ids.length;
+    const object = objectFor(id);
+    if (object && ['world', 'folder'].includes(object.type)) return s?.selectedId === id && !ids.length;
     return s?.selectedId === id && ids.includes(id);
   }
 
