@@ -6,6 +6,9 @@ const avatars = new Map();
 const cameras = new Map();
 const PURPLE = 0x9b5cff;
 const PURPLE_LIGHT = 0xc9adff;
+const POSITION_RESPONSE = 13;
+const DIRECTION_RESPONSE = 16;
+let lastFrameAt = performance.now();
 
 function colorFor(value) {
   let hash = 2166136261;
@@ -61,7 +64,14 @@ function makeAvatar() {
   group.add(arrow);
 
   group.visible = false;
-  return { group, arrow };
+  return {
+    group,
+    arrow,
+    initialized: false,
+    targetPosition: new THREE.Vector3(),
+    currentDirection: new THREE.Vector3(0, 1, 0),
+    targetDirection: new THREE.Vector3(0, 1, 0),
+  };
 }
 
 function updateCameraCache(peerId, cursorData) {
@@ -72,10 +82,22 @@ function updateCameraCache(peerId, cursorData) {
   return cameras.get(peerId) || null;
 }
 
+function alphaFor(response, dt) {
+  return 1 - Math.exp(-Math.max(0, response) * Math.max(0, dt));
+}
+
 function update() {
+  const now = performance.now();
+  const dt = Math.min(.1, Math.max(0, (now - lastFrameAt) / 1000));
+  lastFrameAt = now;
+
   const viewport = window.EPH3D;
   const collab = window.EPH_COLLAB;
-  if (!viewport || !collab) return requestAnimationFrame(update);
+  if (!viewport || !collab) {
+    requestAnimationFrame(update);
+    return;
+  }
+
   const state = collab.state?.() || {};
   const livePeers = new Set((state.users || []).map(user => user.peerId).filter(peerId => peerId && peerId !== state.peerId));
 
@@ -102,6 +124,9 @@ function update() {
     helper.update();
   }
 
+  const positionAlpha = alphaFor(POSITION_RESPONSE, dt);
+  const directionAlpha = alphaFor(DIRECTION_RESPONSE, dt);
+
   for (const peerId of livePeers) {
     const camera = updateCameraCache(peerId, collab.remoteCursors?.get(peerId));
     let avatar = avatars.get(peerId);
@@ -117,12 +142,25 @@ function update() {
     const direction = target.sub(position).normalize();
     if (direction.lengthSq() < .00001) direction.set(0, 1, 0);
 
-    avatar.group.position.copy(position);
-    avatar.arrow.setDirection(direction);
+    avatar.targetPosition.copy(position);
+    avatar.targetDirection.copy(direction);
+
+    if (!avatar.initialized || !avatar.group.visible) {
+      avatar.group.position.copy(avatar.targetPosition);
+      avatar.currentDirection.copy(avatar.targetDirection);
+      avatar.initialized = true;
+    } else {
+      avatar.group.position.lerp(avatar.targetPosition, positionAlpha);
+      avatar.currentDirection.lerp(avatar.targetDirection, directionAlpha);
+      if (avatar.currentDirection.lengthSq() < .00001) avatar.currentDirection.copy(avatar.targetDirection);
+      else avatar.currentDirection.normalize();
+    }
+
+    avatar.arrow.setDirection(avatar.currentDirection);
     avatar.group.visible = true;
   }
 
-  setTimeout(() => requestAnimationFrame(update), 33);
+  requestAnimationFrame(update);
 }
 
 update();
