@@ -12,12 +12,15 @@ set "HAS_UNMERGED="
 for /f "delims=" %%A in ('git diff --name-only --diff-filter^=U 2^>nul') do set "HAS_UNMERGED=1"
 if defined HAS_UNMERGED (
     echo Interrupted Git merge/conflict detected.
-    echo Clearing the conflicted index while keeping every working file exactly as it is...
+    echo Clearing the conflicted index while keeping the working files available for recovery...
     git reset
     if errorlevel 1 goto error
-    echo Git index recovered. Your local file contents were preserved.
+    echo Git index recovered.
     echo.
 )
+
+call :recovermarkers
+if errorlevel 1 goto error
 
 for /f "usebackq delims=" %%H in (`git rev-parse HEAD:package.json 2^>nul`) do set "PACKAGE_BEFORE=%%H"
 for /f "delims=" %%A in ('git status --porcelain 2^>nul') do set "HAS_CHANGES=1"
@@ -43,11 +46,19 @@ if "!DID_STASH!"=="1" (
     if errorlevel 1 goto stashconflict
 )
 
+call :recovermarkers
+if errorlevel 1 goto error
+
 for /f "usebackq delims=" %%H in (`git rev-parse HEAD:package.json 2^>nul`) do set "PACKAGE_AFTER=%%H"
 if not exist "node_modules\ws\package.json" goto dependencies
 if not exist "node_modules\electron-builder\package.json" goto dependencies
 if /i not "!PACKAGE_BEFORE!"=="!PACKAGE_AFTER!" goto dependencies
 goto updated
+
+:recovermarkers
+if not exist "scripts\recover-git-conflict-markers.js" exit /b 0
+node scripts\recover-git-conflict-markers.js
+exit /b %errorlevel%
 
 :dependencies
 echo.
@@ -78,22 +89,25 @@ if "!DID_STASH!"=="1" (
 goto done
 
 :stashconflict
-set "EXIT_CODE=1"
 echo.
-echo The GitHub update was downloaded, but Git found a conflict while restoring your local changes.
-echo Your local changes are still preserved in the working files and the stash.
-echo Do not delete anything. Run Pull_Latest.bat again after resolving the listed files,
-echo or run "git reset" first if Git reports "needs merge" again.
-goto done
+echo A conflict happened while restoring local changes.
+echo Recovering conflicted files from the updated GitHub version while preserving a backup...
+git reset
+if errorlevel 1 goto error
+call :recovermarkers
+if errorlevel 1 goto error
+echo.
+echo The updated project is usable again.
+echo Non-conflicting local changes remain in the working tree.
+echo The original automatic stash was kept as an extra safety copy.
+echo Run "git stash list" if you ever need to inspect it.
+goto updated
 
 :error
 set "EXIT_CODE=1"
 echo.
-echo Could not temporarily save the local changes. Check the Git error above.
-echo If the error says "needs merge", run this once and retry:
-echo   git reset
-
-echo This does NOT delete your working-file changes.
+echo Could not safely recover or save the local changes. Check the Git error above.
+echo Nothing under .runtime\git-conflict-backups is deleted automatically.
 
 :done
 echo.
