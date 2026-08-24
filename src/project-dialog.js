@@ -175,6 +175,7 @@ const LATE_PASSES = [
   'fgd-editor-model-guard-v18.js',
   'entity-fidelity-v18.js',
   'asset-manager-v24.js',
+  'asset-map-package-ui-v52.js',
   // Asset Manager extensions used to inject their own <script> elements. Keep
   // them in one explicit sequence so startup cannot race or silently omit them.
   'part-numbering-v25.js',
