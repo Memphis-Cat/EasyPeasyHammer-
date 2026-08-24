@@ -189,6 +189,7 @@ const LATE_PASSES = [
   'history-hierarchy-repair-v26.js',
   'negative-brush-v22.js',
   'negative-brush-safety-v22.js',
+  'negative-brush-wall-preserve-v23.js',
   'mesh-topology-repair-v36.js',
   'properties-scroll-v23.js',
   'solid-entity-runtime-v24.js',
