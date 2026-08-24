@@ -9,20 +9,56 @@
   const YELLOW = 0xffd84d;
   const SELECTION_FILL_OPACITY = 0.13;
 
+  let assetBrowserActivated = false;
+  let assetStatusOriginal = null;
   let assetStatusPending = null;
+  let assetStatusScheduled = false;
+
+  function runAssetStatusRefresh(immediate = false) {
+    if (!assetStatusOriginal) return Promise.resolve(state()?.assetStatus || null);
+    if (assetStatusPending) return assetStatusPending;
+
+    const execute = () => {
+      assetStatusScheduled = false;
+      if (assetStatusPending) return assetStatusPending;
+      assetStatusPending = Promise.resolve(assetStatusOriginal())
+        .catch(error => {
+          console.warn('[Runtime Performance V47] Background CS2 asset status failed.', error);
+          return state()?.assetStatus || null;
+        })
+        .finally(() => { assetStatusPending = null; });
+      return assetStatusPending;
+    };
+
+    if (immediate) return execute();
+    if (assetStatusScheduled) return Promise.resolve(state()?.assetStatus || null);
+    assetStatusScheduled = true;
+
+    // Map parsing, scene creation and the first visible WebGL frame get priority.
+    // The AssetHost can touch tens of thousands of Source 2 resources on a cold
+    // launch, so do not make it compete with the first map frame.
+    setTimeout(() => {
+      const start = () => execute();
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(start, { timeout: 1600 });
+      else setTimeout(start, 0);
+    }, 1200);
+    return Promise.resolve(state()?.assetStatus || null);
+  }
+
   try {
     if (typeof refreshAssetStatus === 'function' && !refreshAssetStatus.__ephNonBlockingV47) {
-      const previous = refreshAssetStatus;
-      const wrapped = function(...args) {
-        if (!assetStatusPending) {
-          assetStatusPending = Promise.resolve(previous.apply(this, args))
-            .catch(error => console.warn('[Runtime Performance V47] Background CS2 asset status failed.', error))
-            .finally(() => { assetStatusPending = null; });
-        }
-        return Promise.resolve(state()?.assetStatus || null);
+      assetStatusOriginal = refreshAssetStatus;
+      const wrapped = function() {
+        const s = state();
+        if (assetBrowserActivated) return runAssetStatusRefresh(true);
+        if (s?.project) runAssetStatusRefresh(false);
+        // The startup/home screen never needs to index CS2 assets. Returning
+        // immediately is intentional; a loaded map or Asset Browser interaction
+        // starts the background refresh later.
+        return Promise.resolve(s?.assetStatus || null);
       };
       wrapped.__ephNonBlockingV47 = true;
-      wrapped.__ephPrevious = previous;
+      wrapped.__ephPrevious = assetStatusOriginal;
       refreshAssetStatus = wrapped;
       window.refreshAssetStatus = wrapped;
     }
@@ -103,7 +139,6 @@
     return changed;
   }
 
-  let assetBrowserActivated = false;
   function installLazyAssetBrowser() {
     try {
       if (typeof assetSearchTimer !== 'undefined') clearTimeout(assetSearchTimer);
@@ -118,6 +153,7 @@
           try { renderAssets?.(); } catch {}
           return;
         }
+        if (!s?.assetStatus?.available && assetBrowserActivated) await runAssetStatusRefresh(true);
         return previous.apply(this, args);
       };
       wrapped.__ephLazyV47 = true;
@@ -125,7 +161,16 @@
       searchAssets = wrapped;
       window.searchAssets = wrapped;
 
-      const activate = () => { assetBrowserActivated = true; };
+      const activate = () => {
+        const first = !assetBrowserActivated;
+        assetBrowserActivated = true;
+        if (first && !state()?.assetStatus?.available) {
+          runAssetStatusRefresh(true).then(() => {
+            try { renderAssetStatus?.(); } catch {}
+            try { queueAssetSearch?.(true); } catch {}
+          });
+        }
+      };
       document.getElementById('assetTabs')?.addEventListener('pointerdown', activate, true);
       document.getElementById('assetSearch')?.addEventListener('input', activate, true);
       document.getElementById('assetSearch')?.addEventListener('focus', activate, true);
