@@ -6,6 +6,7 @@ Projects/
 src/bundled/
 backend/**/bin/
 backend/**/obj/
+package-lock.json
 *.log
 .DS_Store
 Thumbs.db
