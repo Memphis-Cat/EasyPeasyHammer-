@@ -231,6 +231,7 @@ const LATE_PASSES = [
   'entity-model-placement-v57.js',
   'editor-correctness-v58.js',
   'editor-correctness-v59.js',
+  'editor-correctness-v60.js',
   'startup-recents-v14.js'
 ];
 
