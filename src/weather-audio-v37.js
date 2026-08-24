@@ -15,6 +15,7 @@
   const TRIGGER_MATERIAL = 'materials/tools/toolstrigger.vmat';
   const OUTER_MARGIN = [768, 768, 256];
   let installedPrepare = null;
+  let didInstallPrepare = false;
 
   const field = (element, key) => element?.fields?.find(item => item?.key === key) || null;
   const scalar = (element, key, fallback = '') => field(element, key)?.value ?? fallback;
@@ -155,8 +156,6 @@
     const mesh = detachByDmxId(out, meshObject.dmxId);
     if (!mesh) return null;
 
-    // Trigger geometry must participate in trigger touches, but it is not a
-    // physical blocking prop/brush. The trigger entity owns its behavior.
     setField(mesh, 'editorOnly', 'bool', '0');
     setField(mesh, 'physicsType', 'string', 'default');
     setField(mesh, 'force_hidden', 'bool', '0');
@@ -184,18 +183,11 @@
     const zones = (objects || []).filter(isRainZone).filter(object => object.weatherStartActive !== false);
     if (!zones.length) return out;
 
-    // Valve's current de_train soundevents provide separate exposed and
-    // sheltered rain loops. Soundscape triggers are client-specific, so each
-    // player gets the correct transition without map I/O or server plugins.
     addSoundscape(out, SHELTERED_NAME, SHELTERED_EVENT);
     addSoundscape(out, EXPOSED_NAME, EXPOSED_EVENT);
 
     zones.forEach((zone, index) => {
       const suffix = String(index + 1).padStart(3, '0');
-      // The larger trigger is entered first and supplies the muffled/sheltered
-      // rain loop. The exact weather volume is added second and takes priority
-      // while the player is actually inside the exposed rain zone. Leaving the
-      // inner zone naturally falls back to the still-active outer soundscape.
       addTrigger(out, zone, `${PREFIX}SHELTER_${suffix}`, SHELTERED_NAME, OUTER_MARGIN);
       addTrigger(out, zone, `${PREFIX}EXPOSED_${suffix}`, EXPOSED_NAME, [0, 0, 0]);
     });
@@ -203,11 +195,9 @@
   }
 
   function installPrepare() {
+    if (didInstallPrepare) return false;
     const current = VMAP.prepareForSave;
-    if (typeof current !== 'function' || current.__ephWeatherAudioV37) {
-      if (current?.__ephWeatherAudioV37) installedPrepare = current;
-      return false;
-    }
+    if (typeof current !== 'function') return false;
     const previous = current.bind(VMAP);
     const wrapped = function(doc, objects, ...rest) {
       const prepared = previous(doc, objects, ...rest);
@@ -217,22 +207,18 @@
     wrapped.__ephPrevious = current;
     VMAP.prepareForSave = wrapped;
     installedPrepare = wrapped;
+    didInstallPrepare = true;
     return true;
   }
 
   installPrepare();
   window.addEventListener('eph-runtime-ready', installPrepare, { once: true });
-  let checks = 0;
-  const guard = setInterval(() => {
-    checks++;
-    if (installedPrepare && VMAP.prepareForSave !== installedPrepare) installPrepare();
-    if (checks >= 48) clearInterval(guard);
-  }, 250);
 
   window.EPH_WEATHER_AUDIO_V37 = {
     exposedEvent: EXPOSED_EVENT,
     shelteredEvent: SHELTERED_EVENT,
-    rebuild: (doc, objects) => addAutomaticRainAudio(doc, objects)
+    rebuild: (doc, objects) => addAutomaticRainAudio(doc, objects),
+    installedPrepare: () => installedPrepare
   };
   console.info('[Weather Audio V37] Automatic exposed/sheltered per-player rain soundscapes installed.');
 })();
