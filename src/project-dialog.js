@@ -236,6 +236,7 @@ const LATE_PASSES = [
   // opacity and final entity/prop renderer choices) after all older wrappers.
   'editor-performance-integrity-v51.js',
   'render-frame-watchdog-v36.js',
+  'instant-assets-v56.js',
   'startup-recents-v14.js'
 ];
 
