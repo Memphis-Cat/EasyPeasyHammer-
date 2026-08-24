@@ -218,6 +218,8 @@ const LATE_PASSES = [
   'hammer-parity-v45.js',
   'hammer-selection-v46.js',
   'selection-sync-v48.js',
+  'editor-interaction-stability-v49.js',
+  'editor-interaction-consistency-v50.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
