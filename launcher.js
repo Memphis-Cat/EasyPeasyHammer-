@@ -1,8 +1,14 @@
 // byanca
 const electron = require('electron');
+const path = require('path');
 
 electron.app.commandLine.appendSwitch('disable-renderer-backgrounding');
 electron.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+const appIcon = path.join(__dirname, 'assets', 'app-icon.png');
+electron.app.on('browser-window-created', (_event, window) => {
+  try { window.setIcon(appIcon); } catch {}
+});
 
 require('./electron-security');
 require('./close-safety');
