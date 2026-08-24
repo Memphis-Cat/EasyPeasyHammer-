@@ -6,7 +6,7 @@
 
   const VMAP = window.EPH_VMAP;
   const csgHistory = [];
-  const MAX_CSG_HISTORY = 24;
+  const MAX_CSG_HISTORY = 1;
   let installed = false;
   let propertiesObserver = null;
 
