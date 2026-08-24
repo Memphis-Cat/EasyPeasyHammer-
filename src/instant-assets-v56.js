@@ -90,9 +90,7 @@
 
   function warmMaterial(item, thumb = null) {
     const path = String(item?.path || '').trim();
-    if (!path || path === 'ERROR') return;
-    viewport()?.loadMaterialTexture?.(path).catch?.(() => {});
-    if (!thumb || thumb.classList.contains('real-thumb')) return;
+    if (!path || path === 'ERROR' || !thumb || thumb.classList.contains('real-thumb')) return;
     if (!thumbUrls.has(path)) {
       thumbUrls.set(path, Promise.resolve(api.materialPreview?.(path))
         .then(result => result?.ok && result.url ? result.url : null)
@@ -126,8 +124,7 @@
     const grid = document.getElementById('assetGrid');
     if (!s || !grid) return;
     const cards = [...grid.querySelectorAll('.asset-card[data-i]')];
-    if (s.assetTab === 'materials') cards.slice(0, 36).forEach(card => warmCard(card));
-    else if (s.assetTab === 'props' || s.assetTab === 'models') cards.slice(0, 12).forEach(card => warmCard(card));
+    if (s.assetTab === 'props' || s.assetTab === 'models') cards.slice(0, 12).forEach(card => warmCard(card));
   }
 
   async function switchTab(tab) {
@@ -144,7 +141,6 @@
       const items = await primeTab(tab, query);
       if (state()?.assetTab === tab && (document.getElementById('assetSearch')?.value?.trim() || '') === query) showItems(tab, items);
     }
-    try { searchAssets?.(); } catch {}
   }
 
   function installSingleClickTabs() {
@@ -188,11 +184,18 @@
 
   async function primeEverything() {
     await ensureAssetStatus();
-    const tasks = ['materials', 'props', 'sounds', 'particles'].map(tab => primeTab(tab, ''));
-    await Promise.allSettled(tasks);
+    const materials = await primeTab('materials', '');
     const s = state();
     const query = document.getElementById('assetSearch')?.value?.trim() || '';
-    if (s && !query && caches.has(cacheKey(s.assetTab, ''))) showItems(s.assetTab, caches.get(cacheKey(s.assetTab, '')));
+    if (s && !query && s.assetTab === 'materials') showItems('materials', materials);
+
+    setTimeout(() => {
+      Promise.allSettled(['props', 'sounds', 'particles'].map(tab => primeTab(tab, ''))).then(() => {
+        const current = state();
+        const currentQuery = document.getElementById('assetSearch')?.value?.trim() || '';
+        if (current && !currentQuery && caches.has(cacheKey(current.assetTab, ''))) showItems(current.assetTab, caches.get(cacheKey(current.assetTab, '')));
+      });
+    }, 0);
   }
 
   function install() {
@@ -214,5 +217,5 @@
     clearCache: () => caches.clear(),
   };
 
-  console.info('[Instant Assets V56] First-click asset tabs, eager CS2 asset caches and render prewarming enabled.');
+  console.info('[Instant Assets V56] Material-first asset caches, single-query tab switching and hover-priority previews enabled.');
 })();
