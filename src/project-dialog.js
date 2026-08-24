@@ -202,6 +202,7 @@ const LATE_PASSES = [
   'viewport-layout-integrity-v35.js',
   'render-core-integrity-v34.js',
   'particle-system-unified-v26.js',
+  'mesh-entity-transform-v31.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
