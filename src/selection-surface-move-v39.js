@@ -5,7 +5,7 @@
   window.__ephSelectionSurfaceMoveV39 = true;
 
   const api = window.easyPeasyHammer;
-  const CONTACT_EPSILON = 0.06;
+  const CONTACT_EPSILON = 0.08;
   const CLICK_DISTANCE = 5;
   let installedViewport = null;
   let moveSession = null;
@@ -36,20 +36,25 @@
   }
 
   function bindKnownSurfaceToggle(viewport) {
-    // editor-ux-v7 uses this exact property/key. Force Surface only as the
-    // startup/default value; the user can still click the Surface button off.
-    if (viewport) viewport.surfaceSnap = true;
-    localStorage.setItem('eph-surface-snap', '1');
-    surfaceEnabled = true;
+    if (!viewport) return;
+    if (!viewport.__ephSurfaceDefaultAppliedV39) {
+      viewport.__ephSurfaceDefaultAppliedV39 = true;
+      viewport.surfaceSnap = true;
+      localStorage.setItem('eph-surface-snap', '1');
+      surfaceEnabled = true;
+    } else {
+      surfaceEnabled = viewport.surfaceSnap !== false;
+    }
+
     const button = document.getElementById('ephSurfaceSnap');
     if (!button) return;
-    button.classList.add('active');
+    button.classList.toggle('active', surfaceEnabled);
     button.title = 'Keep moved objects on surfaces and stop them at floors, walls and ceilings';
     if (button.dataset.ephSurfaceMoveV39 === '1') return;
     button.dataset.ephSurfaceMoveV39 = '1';
     button.addEventListener('click', () => {
       queueMicrotask(() => {
-        surfaceEnabled = viewport?.surfaceSnap !== false;
+        surfaceEnabled = viewport.surfaceSnap !== false;
         localStorage.setItem('eph-surface-snap', surfaceEnabled ? '1' : '0');
         button.classList.toggle('active', surfaceEnabled);
       });
@@ -130,9 +135,8 @@
       if (id) return id;
     }
 
-    // Some Hammer point helpers are sprites/lines with a very small or custom
-    // raycast target. Give point entities and particles a screen-space click
-    // radius so they are still selectable like Hammer helpers.
+    // Point helpers and particle helpers can be much thinner than a Part. Give
+    // every rendered object root a small screen-space target as a fallback.
     const T = THREE();
     if (!T) return null;
     let best = null;
@@ -162,6 +166,8 @@
     if (viewport.__ephClickSelectionV39) return;
     viewport.__ephClickSelectionV39 = true;
 
+    // Window capture runs before the legacy canvas handlers, so a successful
+    // click cannot subsequently be cleared by the older box-selection code.
     window.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !eventTargetsCanvas(viewport, event)) return;
       if ((viewport.tool || state()?.tool) !== 'select') return;
@@ -194,89 +200,103 @@
 
   function obstacleEligible(object) {
     if (!object || object.visible === false || object.ephNegative || object.ephWeatherVolume || object.ephMeshEntityChild) return false;
-    if (object.type === 'part' || object.type === 'prop') return true;
-    if (['entity', 'prop'].includes(object.type) && (object.ephMeshEntity || object.ephMeshChildIds?.length)) return true;
+    if (object.type === 'part' || object.type === 'terrain' || object.type === 'prop') return true;
+    if (object.type === 'entity' && (object.ephMeshEntity || object.ephMeshChildIds?.length)) return true;
     return false;
   }
 
-  function shrinkBox(box, epsilon = CONTACT_EPSILON) {
-    const T = THREE();
-    if (!box || !T || box.isEmpty()) return box;
-    const size = box.getSize(new T.Vector3());
-    for (let axis = 0; axis < 3; axis++) {
-      if (size.getComponent(axis) <= epsilon * 2.5) continue;
-      box.min.setComponent(axis, box.min.getComponent(axis) + epsilon);
-      box.max.setComponent(axis, box.max.getComponent(axis) - epsilon);
-    }
-    return box;
-  }
-
-  function obstacleBoxes(viewport, selectedId) {
-    const T = THREE();
-    if (!T) return [];
-    const boxes = [];
+  function collisionRoots(viewport, selectedId) {
+    const roots = [];
     for (const [id, root] of viewport.objectRoots || []) {
       if (id === selectedId || !root?.visible) continue;
-      const object = selectedObject(id);
-      if (!obstacleEligible(object)) continue;
-      const box = new T.Box3().setFromObject(root);
-      if (box.isEmpty()) continue;
-      boxes.push({ id, box: shrinkBox(box, CONTACT_EPSILON * 0.5) });
+      if (!obstacleEligible(selectedObject(id))) continue;
+      roots.push(root);
     }
-    return boxes;
+    return roots;
   }
 
-  function translatedBox(source, offset) {
-    return source.clone().translate(offset);
-  }
+  function leadingFaceSamples(box, direction) {
+    const T = THREE();
+    if (!T || !box || box.isEmpty()) return [];
+    const min = box.min, max = box.max;
+    const mid = min.clone().add(max).multiplyScalar(0.5);
+    const samples = [];
+    const addFace = (axis, positive) => {
+      const fixed = positive ? max.getComponent(axis) : min.getComponent(axis);
+      const a = (axis + 1) % 3;
+      const b = (axis + 2) % 3;
+      const valuesA = [min.getComponent(a), mid.getComponent(a), max.getComponent(a)];
+      const valuesB = [min.getComponent(b), mid.getComponent(b), max.getComponent(b)];
+      for (const va of valuesA) for (const vb of valuesB) {
+        const point = mid.clone();
+        point.setComponent(axis, fixed);
+        point.setComponent(a, va);
+        point.setComponent(b, vb);
+        samples.push(point);
+      }
+    };
 
-  function intersectsAny(box, obstacles) {
-    return obstacles.some(item => box.intersectsBox(item.box));
+    const absolute = [Math.abs(direction.x), Math.abs(direction.y), Math.abs(direction.z)];
+    const largest = Math.max(...absolute);
+    for (let axis = 0; axis < 3; axis++) {
+      // Always sample the dominant leading face, and sample secondary faces for
+      // diagonal movement so corners cannot tunnel through perpendicular walls.
+      if (absolute[axis] < Math.max(0.12, largest * 0.35)) continue;
+      addFace(axis, direction.getComponent(axis) >= 0);
+    }
+    if (!samples.length) addFace(2, direction.z >= 0);
+
+    const unique = new Map();
+    for (const point of samples) {
+      const key = `${point.x.toFixed(4)},${point.y.toFixed(4)},${point.z.toFixed(4)}`;
+      unique.set(key, point);
+    }
+    return [...unique.values()];
   }
 
   function clampedMovePosition(viewport, selectedId, from, to) {
     const T = THREE();
     const root = viewport.objectRoots?.get(selectedId);
     if (!T || !root) return to;
-    const distance = from.distanceTo(to);
+    const delta = to.clone().sub(from);
+    const distance = delta.length();
     if (distance < 1e-7) return to;
+    const direction = delta.clone().multiplyScalar(1 / distance);
+    const candidates = collisionRoots(viewport, selectedId);
+    if (!candidates.length) return to;
 
-    const candidateBox = shrinkBox(new T.Box3().setFromObject(root));
-    if (candidateBox.isEmpty()) return to;
-    const obstacles = obstacleBoxes(viewport, selectedId);
-    if (!obstacles.length) return to;
+    // root is currently at `to`; translate its exact world bounds back to the
+    // last accepted position and cast from the leading faces through the real
+    // rendered triangles. This works for hollow/CSG rooms where a whole-object
+    // AABB would incorrectly treat the empty room as solid.
+    const previousBox = new T.Box3().setFromObject(root).translate(from.clone().sub(to));
+    if (previousBox.isEmpty()) return to;
+    const samples = leadingFaceSamples(previousBox, direction);
+    if (!samples.length) return to;
 
-    const fromOffset = from.clone().sub(to);
-    const startBox = translatedBox(candidateBox, fromOffset);
-    if (intersectsAny(startBox, obstacles)) return to;
-    if (!intersectsAny(candidateBox, obstacles)) return to;
-
-    const extents = candidateBox.getSize(new T.Vector3());
-    const smallest = Math.max(1, Math.min(extents.x || 1, extents.y || 1, extents.z || 1));
-    const steps = Math.max(4, Math.min(64, Math.ceil(distance / Math.max(1, smallest * 0.2))));
-    const direction = to.clone().sub(from);
-    let safeT = 0;
-    let hitT = 1;
-
-    for (let index = 1; index <= steps; index++) {
-      const t = index / steps;
-      const sample = from.clone().addScaledVector(direction, t);
-      const offset = sample.clone().sub(to);
-      if (intersectsAny(translatedBox(candidateBox, offset), obstacles)) {
-        hitT = t;
-        break;
+    const oldNear = viewport.raycaster.near;
+    const oldFar = viewport.raycaster.far;
+    let nearest = Infinity;
+    try {
+      viewport.raycaster.near = 0;
+      viewport.raycaster.far = distance + CONTACT_EPSILON * 4;
+      for (const sample of samples) {
+        // Start a hair behind the leading face to keep exact contact stable.
+        const origin = sample.clone().addScaledVector(direction, -CONTACT_EPSILON * 0.25);
+        viewport.raycaster.set(origin, direction);
+        viewport.raycaster.far = distance + CONTACT_EPSILON * 4;
+        const hit = viewport.raycaster.intersectObjects(candidates, true)[0];
+        if (!hit || !Number.isFinite(hit.distance)) continue;
+        nearest = Math.min(nearest, hit.distance);
       }
-      safeT = t;
+    } finally {
+      viewport.raycaster.near = oldNear;
+      viewport.raycaster.far = oldFar;
     }
 
-    for (let iteration = 0; iteration < 12; iteration++) {
-      const mid = (safeT + hitT) * 0.5;
-      const sample = from.clone().addScaledVector(direction, mid);
-      const offset = sample.clone().sub(to);
-      if (intersectsAny(translatedBox(candidateBox, offset), obstacles)) hitT = mid;
-      else safeT = mid;
-    }
-    return from.clone().addScaledVector(direction, safeT);
+    if (!Number.isFinite(nearest) || nearest > distance + CONTACT_EPSILON) return to;
+    const safeDistance = Math.max(0, nearest - CONTACT_EPSILON);
+    return from.clone().addScaledVector(direction, Math.min(distance, safeDistance));
   }
 
   function beginMove(viewport) {
@@ -305,7 +325,9 @@
       const safe = clampedMovePosition(this, session.id, session.lastSafe, candidate);
       if (safe.distanceToSquared(candidate) > 1e-10) {
         root.position.copy(safe);
+        // Re-run the authoritative transform chain with the corrected position.
         raw(doCommit, ...rest);
+        this.updateSelectionBox?.();
       }
       session.lastSafe.copy(root.position);
       if (doCommit) moveSession = null;
@@ -332,7 +354,10 @@
     installedViewport = viewport;
     installClickSelection(viewport);
     installSurfaceStopping(viewport);
-    report('normal', 'Surface is the default Move mode. Wall/floor/ceiling stopping and universal Select clicks are enabled.');
+    if (!viewport.__ephSelectionSurfaceAnnouncedV39) {
+      viewport.__ephSelectionSurfaceAnnouncedV39 = true;
+      report('normal', 'Surface is the default Move mode. Real-geometry wall/floor/ceiling stopping and universal Select clicks are enabled.');
+    }
     return true;
   }
 
