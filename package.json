@@ -9,12 +9,13 @@
   "scripts": {
     "test:vmap": "node scripts/vmap-self-test.js",
     "test:editor": "node scripts/editor-self-test.js",
+    "test:topology": "node scripts/mesh-topology-self-test.js",
     "bundle:renderer": "node bundle-renderer.js",
-    "start": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
-    "dev": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron .",
-    "prebuild": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js",
+    "start": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
+    "dev": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
+    "prebuild": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js",
     "build": "node bundle-renderer.js && electron-builder --win portable",
-    "build:portable": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node bundle-renderer.js && electron-builder --win portable"
+    "build:portable": "node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
     "ws": "8.21.3"
