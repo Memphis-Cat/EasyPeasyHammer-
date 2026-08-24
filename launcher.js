@@ -27,6 +27,7 @@ electron.app.whenReady().then(() => {
 
 require('./electron-security');
 require('./close-safety');
+require('./window-focus-v62');
 
 // Install diagnostics first so every later IPC handler/main-process failure is
 // recorded, including failures that happen before the editor screen opens.
