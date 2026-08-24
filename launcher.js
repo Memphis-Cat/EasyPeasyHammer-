@@ -33,6 +33,11 @@ registerEntityFgdServiceV17({ ipcMain: electron.ipcMain, app: electron.app });
 const { registerEntityFgdServiceV18 } = require('./src/entity-fgd-service-v18');
 registerEntityFgdServiceV18({ ipcMain: electron.ipcMain, app: electron.app });
 
+// Final entity catalog follows the FGD include/exclude chain and SearchPaths
+// from the installed CS2 configuration, matching the same source Hammer uses.
+const { registerEntityFgdServiceV42 } = require('./src/entity-fgd-service-v42');
+registerEntityFgdServiceV42({ ipcMain: electron.ipcMain, app: electron.app });
+
 const { registerLargeMapService } = require('./large-map-service');
 registerLargeMapService({ ipcMain: electron.ipcMain, app: electron.app });
 
