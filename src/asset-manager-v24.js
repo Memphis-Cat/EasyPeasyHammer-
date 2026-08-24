@@ -6,7 +6,7 @@
 
   const SEARCH_LIMIT = 260;
   const RENDER_LIMIT = 180;
-  const THUMB_CONCURRENCY = 4;
+  const THUMB_CONCURRENCY = 8;
   const TAB_KIND = { materials: 'material', props: 'model', models: 'model', sounds: 'sound', particles: 'particle' };
   const TAB_LABEL = { materials: 'MAT', props: 'MDL', models: 'MDL', sounds: 'SND', particles: 'VFX', entities: 'ENT' };
 
@@ -108,7 +108,7 @@
       }
       return;
     }
-    searchTimer = setTimeout(searchAssets, immediate ? 0 : 160);
+    searchTimer = setTimeout(searchAssets, immediate ? 0 : 70);
   };
   window.queueAssetSearch = queueAssetSearch;
 
@@ -158,7 +158,7 @@
     if (!path || path === 'ERROR') return null;
     if (!thumbCache.has(path)) {
       thumbCache.set(path, Promise.resolve(api.materialPreview(path)).then(result => result?.ok && result.url ? result.url : null).catch(() => null));
-      if (thumbCache.size > 512) thumbCache.delete(thumbCache.keys().next().value);
+      if (thumbCache.size > 768) thumbCache.delete(thumbCache.keys().next().value);
     }
     return thumbCache.get(path);
   }
@@ -178,11 +178,13 @@
     }
   }
 
-  function queueThumb(thumb, path) {
+  function queueThumb(thumb, path, urgent = false) {
     const key = `${path}|${thumb.dataset.thumb || ''}`;
     if (!path || path === 'ERROR' || thumbQueued.has(key) || thumb.classList.contains('real-thumb')) return;
     thumbQueued.add(key);
-    thumbQueue.push({ key, thumb, path });
+    const task = { key, thumb, path };
+    if (urgent) thumbQueue.unshift(task);
+    else thumbQueue.push(task);
     pumpThumbQueue();
   }
 
@@ -192,7 +194,7 @@
     const thumbs = [...grid.querySelectorAll('.asset-thumb[data-asset-path]')];
     if (!thumbs.length) return;
     if (typeof IntersectionObserver !== 'function') {
-      thumbs.slice(0, 24).forEach(thumb => queueThumb(thumb, thumb.dataset.assetPath));
+      thumbs.slice(0, 48).forEach(thumb => queueThumb(thumb, thumb.dataset.assetPath, true));
       return;
     }
     thumbObserver = new IntersectionObserver(entries => {
@@ -200,9 +202,9 @@
         if (!entry.isIntersecting) continue;
         const thumb = entry.target;
         thumbObserver.unobserve(thumb);
-        queueThumb(thumb, thumb.dataset.assetPath);
+        queueThumb(thumb, thumb.dataset.assetPath, entry.intersectionRatio > 0);
       }
-    }, { root: grid, rootMargin: '160px' });
+    }, { root: grid, rootMargin: '480px' });
     thumbs.forEach(thumb => thumbObserver.observe(thumb));
   }
 
@@ -282,5 +284,5 @@
     renderAssetStatus();
   }, { once: true });
 
-  console.info('[Asset Manager V24] Search-on-use, bounded DOM rendering and lazy thumbnail decoding enabled for all indexed assets.');
+  console.info('[Asset Manager V24] Faster material search, visible-first thumbnail decoding and bounded asset rendering enabled.');
 })();
