@@ -21,6 +21,20 @@
       refinement.href = 'startup-modern-v54.css';
       document.head.appendChild(refinement);
     }
+    if (!document.querySelector('link[href="editor-modern-v55.css"]')) {
+      const editorStyle = document.createElement('link');
+      editorStyle.id = 'ephEditorModernV55Style';
+      editorStyle.rel = 'stylesheet';
+      editorStyle.href = 'editor-modern-v55.css';
+      document.head.appendChild(editorStyle);
+    }
+    if (!document.querySelector('script[src="editor-modern-v55.js"]')) {
+      const editorRuntime = document.createElement('script');
+      editorRuntime.id = 'ephEditorModernV55Runtime';
+      editorRuntime.src = 'editor-modern-v55.js';
+      editorRuntime.defer = true;
+      document.head.appendChild(editorRuntime);
+    }
 
     const screen = document.getElementById('startupScreen');
     const card = screen?.querySelector('.startup-card');
