@@ -203,6 +203,7 @@ const LATE_PASSES = [
   'render-core-integrity-v34.js',
   'particle-system-unified-v26.js',
   'mesh-entity-transform-v31.js',
+  'mesh-entity-collision-ownership-v32.js',
   'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
