@@ -14,6 +14,7 @@
   let customPartPick = null;
   let leftPointerDown = false;
   let lastPointer = null;
+  let toolRepairFrame = 0;
 
   function ensureStyle() {
     if (document.getElementById('ephEditorPolishV62Style')) return;
@@ -56,9 +57,15 @@
       }
       for (const child of [...button.children]) if (child.tagName !== 'IMG') child.remove();
       const label = labels[index] || button.title || 'Viewport option';
-      button.title = label;
-      button.setAttribute('aria-label', label);
+      if (button.title !== label) button.title = label;
+      if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
     });
+  }
+
+  function setImportant(node, property, value) {
+    if (!node) return;
+    if (node.style.getPropertyValue(property) === value && node.style.getPropertyPriority(property) === 'important') return;
+    node.style.setProperty(property, value, 'important');
   }
 
   function toolNodes() {
@@ -81,21 +88,33 @@
     const editor = document.getElementById('editorScreen');
     if (!editor) return false;
 
-    editor.dataset.ephV62Tool = active;
-    editor.dataset.ephActiveTool = active;
-    editor.dataset.ephV61Tool = active;
+    if (editor.dataset.ephV62Tool !== active) editor.dataset.ephV62Tool = active;
+    if (editor.dataset.ephActiveTool !== active) editor.dataset.ephActiveTool = active;
+    if (editor.dataset.ephV61Tool !== active) editor.dataset.ephV61Tool = active;
+
     for (const [node, owner] of toolNodes()) {
       const visible = owner === active;
-      node.style.setProperty('display', visible ? 'inline-flex' : 'none', 'important');
-      node.style.setProperty('visibility', visible ? 'visible' : 'hidden', 'important');
-      node.style.setProperty('pointer-events', visible ? 'auto' : 'none', 'important');
+      setImportant(node, 'display', visible ? 'inline-flex' : 'none');
+      setImportant(node, 'visibility', visible ? 'visible' : 'hidden');
+      setImportant(node, 'pointer-events', visible ? 'auto' : 'none');
     }
+
     document.querySelectorAll('#editorScreen .tool-mode[data-tool], #editorScreen #toolRail [data-tool]').forEach(button => {
       const selected = String(button.dataset.tool || '').toLowerCase() === active;
-      button.classList.toggle('active', selected);
-      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      if (button.classList.contains('active') !== selected) button.classList.toggle('active', selected);
+      const pressed = selected ? 'true' : 'false';
+      if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
     });
     return true;
+  }
+
+  function scheduleToolRepair() {
+    if (toolRepairFrame) return;
+    toolRepairFrame = requestAnimationFrame(() => {
+      toolRepairFrame = 0;
+      cleanViewportButtons();
+      syncToolUi();
+    });
   }
 
   function selectionRectVisible() {
@@ -107,9 +126,9 @@
 
   function hideSelectionRect() {
     document.querySelectorAll('.eph-selection-rect').forEach(rect => {
-      rect.style.setProperty('display', 'none', 'important');
-      rect.style.width = '0px';
-      rect.style.height = '0px';
+      setImportant(rect, 'display', 'none');
+      if (rect.style.width !== '0px') rect.style.width = '0px';
+      if (rect.style.height !== '0px') rect.style.height = '0px';
     });
   }
 
@@ -130,9 +149,7 @@
     if (!canvas || typeof PointerEvent !== 'function') return;
     const info = lastPointer || {};
     const pointerId = event?.pointerId ?? info.pointerId ?? 1;
-    try {
-      if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture(pointerId);
-    } catch {}
+    try { if (canvas.hasPointerCapture?.(pointerId)) canvas.releasePointerCapture(pointerId); } catch {}
     try {
       canvas.dispatchEvent(new PointerEvent('pointerup', {
         bubbles: true,
@@ -327,7 +344,7 @@
     window.addEventListener('pointerup', released, true);
     window.addEventListener('pointercancel', released, true);
     window.addEventListener('mouseup', released, true);
-    window.addEventListener('blur', () => { released(); scheduleFocusPaint(); }, true);
+    window.addEventListener('blur', () => { released(); }, true);
     window.addEventListener('focus', scheduleFocusPaint, true);
     window.addEventListener('pageshow', scheduleFocusPaint, true);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleFocusPaint(); }, true);
@@ -341,20 +358,29 @@
   }
 
   function installObservers() {
-    const editor = document.getElementById('editorScreen');
-    if (editor && editor.dataset.ephPolishV62Observer !== '1') {
-      editor.dataset.ephPolishV62Observer = '1';
+    const toolbar = document.querySelector('#editorScreen .toolbar-row');
+    if (toolbar && toolbar.dataset.ephPolishV62Observer !== '1') {
+      toolbar.dataset.ephPolishV62Observer = '1';
+      new MutationObserver(scheduleToolRepair).observe(toolbar, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+      });
+    }
+
+    const properties = document.getElementById('propertiesContent');
+    if (properties && properties.dataset.ephPolishV62PartObserver !== '1') {
+      properties.dataset.ephPolishV62PartObserver = '1';
       let queued = false;
       new MutationObserver(() => {
         if (queued) return;
         queued = true;
         queueMicrotask(() => {
           queued = false;
-          cleanViewportButtons();
-          syncToolUi();
           decoratePartFields();
         });
-      }).observe(editor, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+      }).observe(properties, { childList: true, subtree: true });
     }
   }
 
@@ -382,5 +408,5 @@
     hideSelectionRect,
   };
 
-  console.info('[Editor Polish V62] Focus repaint, smooth tool UI authority, stuck marquee recovery, Part reference picking, viewport cleanup and chat placement installed.');
+  console.info('[Editor Polish V62] Focus repaint, tool UI authority, stuck marquee recovery, Part reference picking, viewport cleanup and chat placement installed.');
 })();
