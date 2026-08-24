@@ -11,7 +11,11 @@
   const EXPOSED_NAME = `${PREFIX}EXPOSED`;
   const SHELTERED_NAME = `${PREFIX}SHELTERED`;
   const EXPOSED_EVENT = 'train.Outside_TSpawn.Rain';
-  const SHELTERED_EVENT = 'train.TStairs.Rain';
+  // Valve's TStairs event is specifically rain hitting a tin/interior surface
+  // (rain_tin_interior.vsnd). It sounds wrong as the generic "near rain but not
+  // standing in it" layer. TMain.Rain is Valve's neutral interior rain loop
+  // (rain_interior.vsnd), so use it for every automatically generated outer zone.
+  const SHELTERED_EVENT = 'train.TMain.Rain';
   const TRIGGER_MATERIAL = 'materials/tools/toolstrigger.vmat';
   const OUTER_MARGIN = [768, 768, 256];
   let installedPrepare = null;
@@ -220,5 +224,5 @@
     rebuild: (doc, objects) => addAutomaticRainAudio(doc, objects),
     installedPrepare: () => installedPrepare
   };
-  console.info('[Weather Audio V37] Automatic exposed/sheltered per-player rain soundscapes installed.');
+  console.info('[Weather Audio V37] Automatic exposed/nearby per-player rain soundscapes installed.');
 })();
