@@ -35,6 +35,19 @@
     return s?.selectedId === id && ids.includes(id);
   }
 
+  function updateBlueHelpers(viewport) {
+    viewport?.scene?.traverse?.(node => {
+      if (node?.userData?.ephMultiSelection) {
+        try { node.update?.(); } catch {}
+      }
+    });
+  }
+
+  function selected(id) {
+    const s = state();
+    return Boolean(id && (s?.selectedId === id || (Array.isArray(s?.multiSelectedIds) && s.multiSelectedIds.includes(id))));
+  }
+
   function install(viewport = window.EPH3D || state()?.viewport) {
     if (!viewport?.select || !viewport?.setObjects) return false;
     if (viewport.__ephSelectionSyncV48) {
@@ -71,9 +84,6 @@
         // that immediately so blue/yellow/tree selection cannot split apart.
         syncDirectSelection(this, finalId);
       }
-      // If the id is already inside the canonical group, preserve the group.
-      // Normal user clicks are handled by select-click/multi-select, which
-      // explicitly collapse to one object when that is the intended action.
       return result;
     };
     copyMarkers(wrappedSelect, previousSelect);
@@ -81,7 +91,29 @@
     wrappedSelect.__ephPrevious = previousSelect;
     viewport.select = wrappedSelect;
 
-    console.info('[Selection Sync V48] Direct viewport, placement, Scene and multi-selection state now share one canonical selection.');
+    // BoxHelper does not update itself when its target moves/scales. Keeping the
+    // blue helpers live here fixes the old "yellow moved but blue stayed behind"
+    // bug during normal one-object transforms as well as multi-transforms.
+    if (viewport.transform) {
+      viewport.transform.addEventListener?.('objectChange', () => updateBlueHelpers(viewport));
+      viewport.transform.addEventListener?.('change', () => updateBlueHelpers(viewport));
+      viewport.transform.addEventListener?.('dragging-changed', () => updateBlueHelpers(viewport));
+    }
+
+    if (typeof viewport.updateObject === 'function') {
+      const previousUpdateObject = viewport.updateObject;
+      const wrappedUpdateObject = function(object, ...rest) {
+        const result = previousUpdateObject.call(this, object, ...rest);
+        if (selected(object?.id)) queueMicrotask(() => window.EPH_MULTI_SELECTION?.refresh?.());
+        return result;
+      };
+      copyMarkers(wrappedUpdateObject, previousUpdateObject);
+      wrappedUpdateObject.__ephSelectionSyncV48 = true;
+      wrappedUpdateObject.__ephPrevious = previousUpdateObject;
+      viewport.updateObject = wrappedUpdateObject;
+    }
+
+    console.info('[Selection Sync V48] Direct, Scene and multi-selection state plus live blue bounds now share one canonical selection.');
     return true;
   }
 
