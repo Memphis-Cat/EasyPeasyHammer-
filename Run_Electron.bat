@@ -19,6 +19,11 @@ node scripts\vmap-self-test.js
 if errorlevel 1 goto error
 
 echo.
+echo Running carve topology self-test...
+node scripts\mesh-topology-self-test.js
+if errorlevel 1 goto error
+
+echo.
 echo Building browser renderer bundles...
 node bundle-renderer.js
 if errorlevel 1 goto error
