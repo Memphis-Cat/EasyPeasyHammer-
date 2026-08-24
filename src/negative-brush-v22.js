@@ -7,6 +7,9 @@
   const VMAP = window.EPH_VMAP;
   const EPSILON = 1e-5;
   const RAD = Math.PI / 180;
+  const MAX_CUTTER_POLYGONS = 12000;
+  const MAX_SOURCE_POLYGONS = 100000;
+  const MAX_RESULT_POLYGONS = 150000;
   let viewport = null;
   let prepareWrapped = false;
   let extrasWrapped = false;
@@ -45,8 +48,8 @@
       const COPLANAR = 0, FRONT = 1, BACK = 2, SPANNING = 3;
       let polygonType = 0;
       const types = polygon.vertices.map(vertex => {
-        const t = this.normal.dot(vertex.pos) - this.w;
-        const type = t < -EPSILON ? BACK : t > EPSILON ? FRONT : COPLANAR;
+        const distance = this.normal.dot(vertex.pos) - this.w;
+        const type = distance < -EPSILON ? BACK : distance > EPSILON ? FRONT : COPLANAR;
         polygonType |= type;
         return type;
       });
@@ -187,24 +190,110 @@
     return new THREE.Matrix4().compose(position, quaternion, scale);
   }
 
-  function orientedFace(object, face) {
-    const THREE = window.EPH_THREE || window.THREE;
-    const points = face.map(index => new THREE.Vector3(...(object.vertices?.[index] || [0, 0, 0])));
-    if (points.length < 3) return points;
-    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
-    if (normal.lengthSq() < EPSILON * EPSILON) return points;
-    const center = points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / points.length);
-    const bounds = VMAP.geometryBounds?.(object.vertices || []);
-    const objectCenter = new THREE.Vector3(...(bounds?.center || [0, 0, 0]));
-    if (normal.dot(center.clone().sub(objectCenter)) < 0) points.reverse();
-    return points;
+  const undirectedEdgeKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`;
+
+  function cleanFaceIndices(face, vertexCount) {
+    const output = [];
+    for (const raw of Array.isArray(face) ? face : []) {
+      const index = Number(raw);
+      if (!Number.isInteger(index) || index < 0 || index >= vertexCount) continue;
+      if (output.at(-1) !== index) output.push(index);
+    }
+    if (output.length > 2 && output[0] === output.at(-1)) output.pop();
+    return new Set(output).size >= 3 ? output : [];
+  }
+
+  // The old implementation oriented every face by asking whether it pointed
+  // away from the mesh bounding-box center. That only works for convex meshes.
+  // After the first hole, cavity faces legitimately point toward that center;
+  // the next carve therefore flipped them inside-out and produced the exact
+  // same-winding/non-manifold failure seen in the diagnostics. Instead, solve
+  // face orientation from shared edges and then orient each closed component by
+  // signed volume. This works for concave meshes and for repeated CSG holes.
+  function outwardFaces(object) {
+    const vertices = object?.vertices || [];
+    const faces = (object?.faces || []).map(face => cleanFaceIndices(face, vertices.length)).filter(face => face.length >= 3);
+    if (!faces.length) return [];
+
+    const usage = new Map();
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      const face = faces[faceIndex];
+      for (let i = 0; i < face.length; i++) {
+        const a = face[i], b = face[(i + 1) % face.length];
+        const key = undirectedEdgeKey(a, b);
+        const list = usage.get(key) || [];
+        list.push({ faceIndex, a, b });
+        usage.set(key, list);
+      }
+    }
+
+    const graph = Array.from({ length: faces.length }, () => []);
+    for (const list of usage.values()) {
+      if (list.length !== 2) continue;
+      const a = list[0], b = list[1];
+      const xor = a.a === b.a && a.b === b.b ? 1 : 0;
+      graph[a.faceIndex].push({ face: b.faceIndex, xor });
+      graph[b.faceIndex].push({ face: a.faceIndex, xor });
+    }
+
+    const flip = Array(faces.length).fill(null);
+    const components = [];
+    for (let start = 0; start < faces.length; start++) {
+      if (flip[start] !== null) continue;
+      flip[start] = 0;
+      const component = [];
+      const queue = [start];
+      for (let cursor = 0; cursor < queue.length; cursor++) {
+        const current = queue[cursor];
+        component.push(current);
+        for (const edge of graph[current]) {
+          const wanted = flip[current] ^ edge.xor;
+          if (flip[edge.face] === null) {
+            flip[edge.face] = wanted;
+            queue.push(edge.face);
+          }
+        }
+      }
+      components.push(component);
+    }
+
+    for (let index = 0; index < faces.length; index++) if (flip[index]) faces[index].reverse();
+
+    const signedVolume = component => {
+      let volume = 0;
+      for (const faceIndex of component) {
+        const face = faces[faceIndex];
+        const a = vertices[face[0]];
+        if (!a) continue;
+        for (let i = 1; i < face.length - 1; i++) {
+          const b = vertices[face[i]], c = vertices[face[i + 1]];
+          if (!b || !c) continue;
+          volume += (
+            a[0] * (b[1] * c[2] - b[2] * c[1])
+            + a[1] * (b[2] * c[0] - b[0] * c[2])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])
+          ) / 6;
+        }
+      }
+      return volume;
+    };
+
+    for (const component of components) {
+      if (signedVolume(component) < -EPSILON) {
+        for (const faceIndex of component) faces[faceIndex].reverse();
+      }
+    }
+    return faces;
   }
 
   function objectPolygons(object, forcedMaterial = null) {
+    const THREE = window.EPH_THREE || window.THREE;
     const matrix = matrixFor(object);
     const polygons = [];
-    for (let faceIndex = 0; faceIndex < (object.faces?.length || 0); faceIndex++) {
-      const points = orientedFace(object, object.faces[faceIndex] || []);
+    const faces = outwardFaces(object);
+    for (let faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+      const face = faces[faceIndex];
+      const points = face.map(index => new THREE.Vector3(...(object.vertices?.[index] || [0, 0, 0])));
       if (points.length < 3) continue;
       const material = forcedMaterial || object.faceMaterials?.[faceIndex] || object.faceMaterials?.[0] || 'ERROR';
       for (let index = 1; index < points.length - 1; index++) {
@@ -224,12 +313,24 @@
     return box;
   }
 
+  function canonicalFaceKey(face) {
+    const values = [...face];
+    if (!values.length) return '';
+    const variants = [];
+    for (const candidate of [values, [...values].reverse()]) {
+      for (let offset = 0; offset < candidate.length; offset++) variants.push(candidate.slice(offset).concat(candidate.slice(0, offset)).join(':'));
+    }
+    variants.sort();
+    return variants[0] || '';
+  }
+
   function applyPolygons(target, polygons) {
     const inverse = matrixFor(target).invert();
     const vertices = [];
     const faces = [];
     const materials = [];
     const indexByKey = new Map();
+    const faceKeys = new Set();
     const keyFor = vector => [vector.x, vector.y, vector.z].map(value => Number(value.toFixed(5))).join(',');
     const indexFor = vector => {
       const local = vector.clone().applyMatrix4(inverse);
@@ -243,9 +344,11 @@
 
     for (const polygon of polygons) {
       const face = polygon.vertices.map(vertex => indexFor(vertex.pos));
-      const clean = face.filter((value, index) => index === 0 || value !== face[index - 1]);
-      if (clean.length >= 3 && clean[0] === clean.at(-1)) clean.pop();
-      if (new Set(clean).size < 3) continue;
+      const clean = cleanFaceIndices(face, vertices.length);
+      if (clean.length < 3) continue;
+      const faceKey = canonicalFaceKey(clean);
+      if (faceKeys.has(faceKey)) continue;
+      faceKeys.add(faceKey);
       faces.push(clean);
       materials.push(polygon.shared?.material || target.faceMaterials?.[0] || 'ERROR');
     }
@@ -254,6 +357,12 @@
     target.vertices = vertices;
     target.faces = faces;
     target.faceMaterials = materials;
+
+    // Normalize the fresh BSP surface before the Hammer serializer sees it.
+    // The late V36 wrapper remains as a second safety net for T-junctions.
+    const repair = window.EPH_MESH_TOPOLOGY?.repairTjunctions?.(target.vertices, target.faces);
+    if (repair?.ok && repair.changed) target.faces = repair.faces;
+
     target.size = VMAP.geometryBounds(vertices).size;
     target.materials ||= {};
     VMAP.FACE_NAMES?.forEach((name, index) => target.materials[name] = materials[index] || materials[0] || 'ERROR');
@@ -299,6 +408,7 @@
       toast?.(reason);
       return false;
     }
+
     const negative = negatives[0];
     const cutMaterial = normals[0]?.faceMaterials?.[0] || 'ERROR';
     const cutterPolygons = objectPolygons(negative, cutMaterial);
@@ -307,7 +417,7 @@
       toast?.('The Negative Part has no valid closed geometry.');
       return false;
     }
-    if (cutterPolygons.length > 5000) {
+    if (cutterPolygons.length > MAX_CUTTER_POLYGONS) {
       report('Negative Part is too complex for interactive carve.', 'warning', { polygons: cutterPolygons.length });
       toast?.('The Negative Part is too complex to carve safely.');
       return false;
@@ -324,14 +434,17 @@
         const intersects = cutterBox.intersectsBox(normalBox);
         report(`Testing ${normal.name || normal.id}`, 'info', { intersects });
         if (!intersects) { surviving.push(normal.id); continue; }
+
         const sourcePolygons = objectPolygons(normal);
         if (!sourcePolygons.length) { surviving.push(normal.id); continue; }
-        if (sourcePolygons.length > 12000) throw new Error(`${normal.name || 'Part'} is too complex for interactive CSG.`);
+        if (sourcePolygons.length > MAX_SOURCE_POLYGONS) throw new Error(`${normal.name || 'Part'} is too complex for interactive CSG.`);
+
         const result = subtractPolygons(sourcePolygons, cutterPolygons.map(polygon => {
           const copy = polygon.clone();
           copy.shared = { material: normal.faceMaterials?.[0] || 'ERROR' };
           return copy;
         }));
+        if (result.length > MAX_RESULT_POLYGONS) throw new Error(`${normal.name || 'Part'} produced too much geometry for an interactive carve.`);
         report(`CSG result for ${normal.name || normal.id}`, 'info', { inputPolygons: sourcePolygons.length, resultPolygons: result.length });
 
         if (!result.length) {
@@ -403,8 +516,6 @@
         child.material = Array.isArray(child.material) ? styled : styled[0];
         child.userData.ephNegativeStyled = true;
       } else if (child.userData.ephNegativeOriginalMaterial) {
-        const styled = Array.isArray(child.material) ? child.material : [child.material];
-        for (const material of styled) if (material !== child.userData.ephNegativeOriginalMaterial) material?.dispose?.();
         child.material = child.userData.ephNegativeOriginalMaterial;
         delete child.userData.ephNegativeOriginalMaterial;
         delete child.userData.ephNegativeStyled;
