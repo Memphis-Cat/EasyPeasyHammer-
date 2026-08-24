@@ -54,9 +54,9 @@
     const effectName = normalizeParticlePath(item?.path);
     if (!effectName || effectName === '.vpcf') return toast?.('Invalid particle resource');
 
-    // CS2's stock rain/snow particles have a native brush-volume controller.
-    // Keep them as one scalable EasyPeasyHammer object and export them as
-    // func_precipitation instead of a point info_particle_system.
+    // Rain/snow stay as one scalable EasyPeasyHammer editor volume. The CS2
+    // weather runtime converts that box to supported info_particle_system
+    // emitters at save time; func_precipitation is not used for CS2 output.
     if (window.EPH_WEATHER_VOLUME?.isWeatherPath?.(effectName)) {
       return window.EPH_WEATHER_VOLUME.add({ ...item, path: effectName });
     }
@@ -121,7 +121,7 @@
       if (!item) return;
       const weather = window.EPH_WEATHER_VOLUME?.classify?.(item.path);
       card.title = weather
-        ? `${item.path || ''}\nDouble-click to add a scalable ${weather.label.toLowerCase()} volume`
+        ? `${item.path || ''}\nDouble-click to add a scalable ${weather.label.toLowerCase()} editor volume`
         : `${item.path || ''}\nDouble-click to place this particle in the map`;
     });
   };
@@ -137,5 +137,5 @@
     isParticleSystem,
     decorateParticleSystem
   };
-  console.info('[Particle Placement V25] Generic particles use info_particle_system; CS2 rain/snow use native scalable precipitation volumes.');
+  console.info('[Particle Placement V25] Generic particles use info_particle_system; rain/snow editor volumes export as CS2 particle emitters.');
 })();
