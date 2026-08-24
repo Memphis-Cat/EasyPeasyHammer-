@@ -96,6 +96,10 @@ if not "%EB_VERSION%"=="%SAFE_EB_VERSION%" (
 )
 
 echo Using electron-builder %EB_VERSION%.
+echo.
+echo Applying Windows-safe electron-builder dependency collector...
+node scripts\patch-electron-builder-collector.js
+if errorlevel 1 goto error
 
 set "EPH_NO_PAUSE=1"
 call Ensure_Electron.bat
