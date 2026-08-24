@@ -7,7 +7,7 @@
   let replayingReadyClick = false;
 
   function installModernStartup() {
-    if (!document.getElementById('ephStartupModernV53Style')) {
+    if (!document.querySelector('link[href="startup-modern-v53.css"]')) {
       const style = document.createElement('link');
       style.id = 'ephStartupModernV53Style';
       style.rel = 'stylesheet';
