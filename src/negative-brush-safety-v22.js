@@ -14,7 +14,8 @@
     try { return structuredClone(value); }
     catch { try { return JSON.parse(JSON.stringify(value)); } catch { return value; } }
   };
-
+  const field = (element, key) => element?.fields?.find(item => item?.key === key) || null;
+  const elementId = element => String(field(element, 'id')?.value || '');
   const projectKey = () => String(S?.project?.vmapPath || S?.project?.path || S?.project?.name || 'unsaved');
 
   function selectedPartIds() {
@@ -32,8 +33,12 @@
   function capture() {
     if (!S?.doc) return null;
     const partIds = selectedPartIds();
-    const negativeIds = partIds.filter(id => S.objects.find(object => object.id === id)?.ephNegative);
-    const normalIds = partIds.filter(id => !negativeIds.includes(id));
+    const parts = partIds.map(id => {
+      const object = S.objects.find(item => item.id === id);
+      return object ? { id: object.id, dmxId: object.dmxId || null, negative: Boolean(object.ephNegative) } : null;
+    }).filter(Boolean);
+    const negativeIds = parts.filter(part => part.negative).map(part => part.id);
+    const normalIds = parts.filter(part => !part.negative).map(part => part.id);
     return {
       projectKey: projectKey(),
       text: VMAP.stringify(S.doc),
@@ -45,6 +50,7 @@
       redo: [...(S.redo || [])],
       negativeIds,
       normalIds,
+      parts,
       createdAt: Date.now(),
     };
   }
@@ -64,6 +70,73 @@
     renderAll?.();
     S.viewport?.setObjects?.(S.objects, S.selectedId);
     queueMicrotask(() => window.EPH_MULTI_SELECTION?.refresh?.());
+    return true;
+  }
+
+  function detachByDmxId(doc, dmxId) {
+    const wanted = String(dmxId || '');
+    if (!wanted) return null;
+    const visitArray = list => {
+      if (!Array.isArray(list)) return null;
+      for (let index = 0; index < list.length; index++) {
+        const element = list[index];
+        if (!element?.kind) continue;
+        if (elementId(element) === wanted && ['CMapMesh', 'CMapEntity'].includes(element.className)) return list.splice(index, 1)[0];
+        for (const item of element.fields || []) {
+          if (Array.isArray(item.value)) {
+            const found = visitArray(item.value);
+            if (found) return found;
+          } else if (item.value?.kind) {
+            const found = visitArray([item.value]);
+            if (found) return found;
+          }
+        }
+      }
+      return null;
+    };
+    return visitArray(VMAP.getWorldChildren?.(doc) || []);
+  }
+
+  function restoreCarveOnly(snapshot) {
+    if (!snapshot || snapshot.projectKey !== projectKey() || !S?.doc) return false;
+    const preDoc = VMAP.parse(snapshot.text);
+    const currentExtras = typeof extras === 'function' ? clone(extras()) : {};
+    const affected = snapshot.parts || [];
+    const worldChildren = VMAP.getWorldChildren?.(S.doc);
+    if (!Array.isArray(worldChildren)) return false;
+
+    for (const part of affected) {
+      if (!part?.dmxId) continue;
+      detachByDmxId(S.doc, part.dmxId);
+      const original = VMAP.findElementByDmxId?.(preDoc, part.dmxId);
+      if (original) worldChildren.push(clone(original));
+    }
+
+    S.objects = VMAP.extractObjects(S.doc).map(ensureObject);
+    if (typeof applyExtras === 'function') {
+      const mergedExtras = currentExtras || {};
+      for (const part of affected) {
+        if (!part?.id) continue;
+        if (snapshot.extras?.[part.id] !== undefined) mergedExtras[part.id] = clone(snapshot.extras[part.id]);
+        else delete mergedExtras[part.id];
+      }
+      applyExtras(mergedExtras);
+    }
+
+    const preferred = (snapshot.negativeIds || []).find(id => S.objects.some(object => object.id === id))
+      || (snapshot.normalIds || []).find(id => S.objects.some(object => object.id === id))
+      || 'world';
+    S.selectedId = preferred;
+    S.selectedFaces = new Set([0]);
+    S.subSelection = null;
+    const ids = (snapshot.parts || []).map(part => part.id).filter(id => S.objects.some(object => object.id === id));
+    window.EPH_MULTI_SELECTION?.set?.(ids, preferred, { render: false });
+    renderAll?.();
+    S.viewport?.setObjects?.(S.objects, preferred);
+    queueMicrotask(() => {
+      window.EPH_MULTI_SELECTION?.refresh?.();
+      window.EPH_NEGATIVE_BRUSH?.refresh?.();
+    });
     return true;
   }
 
@@ -112,15 +185,17 @@
       updateUndoButtons();
       return false;
     }
-    const entry = csgHistory.pop();
-    if (!restore(entry.snapshot)) {
+    const entry = csgHistory.at(-1);
+    try { pushHistory?.(); } catch {}
+    if (!restoreCarveOnly(entry.snapshot)) {
       toast?.('Could not restore the newest CSG carve.');
       updateUndoButtons();
       return false;
     }
+    csgHistory.pop();
     try { markDirty?.('Undid newest CSG carve'); } catch {}
-    try { log?.('CSG: restored geometry and Negative Part from newest carve'); } catch {}
-    console.info('[Negative Brush Safety V22] Undid newest CSG carve.', {
+    try { log?.('CSG: restored carved Parts and Negative Part'); } catch {}
+    console.info('[Negative Brush Safety V22] Undid newest CSG carve without rolling back unrelated map edits.', {
       negativeIds: entry.snapshot?.negativeIds || [],
       normalIds: entry.snapshot?.normalIds || [],
     });
@@ -218,7 +293,7 @@
     ensureUndoButtons();
     observeProperties();
     installed = true;
-    console.info('[Negative Brush Safety V22] Atomic carve guard and dedicated CSG undo installed.');
+    console.info('[Negative Brush Safety V22] Atomic carve guard and dedicated targeted CSG undo installed.');
     return true;
   }
 
