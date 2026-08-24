@@ -186,12 +186,23 @@
     renderAssetStatus();
   };
 
+  function loadExtension(src) {
+    if ([...document.scripts].some(script => script.getAttribute('src')?.endsWith(`/${src}`) || script.getAttribute('src') === src)) return;
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.ephAssetExtension = src;
+    document.body.appendChild(script);
+  }
+
   installStyles();
   installTabs();
   S.assetTotal = totalForTab(S.assetTab);
   renderAssetStatus();
   renderAssets();
   queueAssetSearch(true);
+  loadExtension('part-numbering-v25.js');
+  loadExtension('particle-placement-v25.js');
 
   window.addEventListener('eph-runtime-ready', () => {
     installTabs();
