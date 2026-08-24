@@ -8,15 +8,16 @@
   "license": "UNLICENSED",
   "scripts": {
     "test:v51": "node scripts/v51-runtime-self-test.js",
+    "test:deep-assets": "node scripts/deep-asset-self-test.js",
     "test:vmap": "node scripts/vmap-self-test.js",
     "test:editor": "node scripts/editor-self-test.js",
     "test:topology": "node scripts/mesh-topology-self-test.js",
     "bundle:renderer": "node bundle-renderer.js",
-    "start": "node scripts/v51-runtime-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
-    "dev": "node scripts/v51-runtime-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
-    "prebuild": "node scripts/v51-runtime-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js",
+    "start": "node scripts/v51-runtime-self-test.js && node scripts/deep-asset-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
+    "dev": "node scripts/v51-runtime-self-test.js && node scripts/deep-asset-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron .",
+    "prebuild": "node scripts/v51-runtime-self-test.js && node scripts/deep-asset-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js",
     "build": "node bundle-renderer.js && electron-builder --win portable",
-    "build:portable": "node scripts/v51-runtime-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron-builder --win portable"
+    "build:portable": "node scripts/v51-runtime-self-test.js && node scripts/deep-asset-self-test.js && node scripts/editor-self-test.js && node scripts/vmap-self-test.js && node scripts/mesh-topology-self-test.js && node bundle-renderer.js && electron-builder --win portable"
   },
   "dependencies": {
     "ws": "8.21.3"
