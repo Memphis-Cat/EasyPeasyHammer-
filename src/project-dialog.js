@@ -199,6 +199,7 @@ const LATE_PASSES = [
   'solid-entity-unified-v30.js',
   'viewport-layout-integrity-v35.js',
   'render-core-integrity-v34.js',
+  'render-frame-watchdog-v36.js',
   'startup-recents-v14.js'
 ];
 
