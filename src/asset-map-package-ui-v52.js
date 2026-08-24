@@ -9,6 +9,8 @@
     if (value.startsWith('map-vpk:')) return { tag: 'MAP', label: 'Official map VPK' };
     if (value.startsWith('addon-vpk:')) return { tag: 'ADDON', label: 'Compiled addon VPK' };
     if (value.startsWith('workshop-vpk:')) return { tag: 'WS', label: 'Workshop map VPK' };
+    if (value.startsWith('map-loose:')) return { tag: 'MAP', label: 'Loose compiled map asset' };
+    if (value.startsWith('addon-loose:')) return { tag: 'ADDON', label: 'Loose compiled addon asset' };
     return null;
   };
 
@@ -58,7 +60,7 @@
     const suffix = ` • +${embedded.toLocaleString()} map assets / ${packages.toLocaleString()} map VPKs`;
     const oldSuffix = /\s•\s\+[\d,.]+ map assets \/ [\d,.]+ map VPKs$/;
     element.textContent = `${element.textContent.replace(oldSuffix, '')}${suffix}`;
-    element.title = `Official map VPKs: ${Number(status.officialMapPackageCount || 0).toLocaleString()}\nAddon VPKs: ${Number(status.addonPackageCount || 0).toLocaleString()}\nWorkshop VPKs: ${Number(status.workshopPackageCount || 0).toLocaleString()}\nDeep-index cache: ${status.deepIndexCacheHit ? 'hit' : 'rebuilt'} (${Number(status.deepScanMilliseconds || 0).toLocaleString()} ms)`;
+    element.title = `Official map VPKs: ${Number(status.officialMapPackageCount || 0).toLocaleString()}\nAddon VPKs: ${Number(status.addonPackageCount || 0).toLocaleString()}\nWorkshop VPKs: ${Number(status.workshopPackageCount || 0).toLocaleString()}\nLoose compiled map/addon files scanned: ${Number(status.deepLooseCompiledFileCount || 0).toLocaleString()}\nDeep-index cache: ${status.deepIndexCacheHit ? 'hit' : 'rebuilt'} (${Number(status.deepScanMilliseconds || 0).toLocaleString()} ms)`;
   }
 
   installStyle();
@@ -91,5 +93,5 @@
 
   decorateAssets();
   decorateStatus();
-  console.info('[Asset Map Packages V52] Map/addon/workshop VPK assets are labeled and searchable by package/map name.');
+  console.info('[Asset Map Packages V52] VPK and loose compiled map/addon assets are labeled and searchable by package/map name.');
 })();
