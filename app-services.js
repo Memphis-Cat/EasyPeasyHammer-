@@ -2,6 +2,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { registerCollaboration } = require('./collab-network');
 
@@ -119,6 +120,27 @@ function recentAutosaveRoot(app) {
   return path.join(app.getPath('documents'), 'EasyPeasyHammer', 'Autosaves');
 }
 
+function sanitizeName(value) {
+  return String(value || 'Untitled')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 80) || 'Untitled';
+}
+
+function projectKey(project) {
+  const source = String(project?.vmapPath || project?.name || 'Untitled').toLowerCase();
+  return `${sanitizeName(project?.name || 'Untitled')}_${crypto.createHash('sha1').update(source).digest('hex').slice(0, 10)}`;
+}
+
+function directRecentSessionFile(app, vmapPath) {
+  const resolved = path.resolve(String(vmapPath || ''));
+  const project = {
+    name: path.basename(resolved, path.extname(resolved)),
+    vmapPath: resolved,
+  };
+  return path.join(recentAutosaveRoot(app), projectKey(project), 'session.json');
+}
+
 function recentProjectSessions(app) {
   const root = recentAutosaveRoot(app);
   const sessions = [];
@@ -162,15 +184,54 @@ function listRecentProjects(app, limit = 24) {
   }));
 }
 
-function openRecentProject(app, vmapPath) {
+function stripRedundantRecentVmap(project, uiState) {
+  if (!uiState || typeof uiState !== 'object') return uiState || null;
+  if (typeof uiState.vmapText !== 'string' || !uiState.vmapText) return uiState;
+
+  const ui = { ...uiState };
+  try {
+    if (ui.dirty === false) {
+      delete ui.vmapText;
+      return ui;
+    }
+
+    const disk = fs.readFileSync(project.vmapPath, 'utf8');
+    if (disk === ui.vmapText) delete ui.vmapText;
+  } catch {}
+  return ui;
+}
+
+async function openRecentProject(app, vmapPath) {
   if (!vmapPath) return null;
-  const target = path.resolve(String(vmapPath)).toLowerCase();
-  const session = recentProjectSessions(app).find(item => path.resolve(item.project.vmapPath).toLowerCase() === target);
-  if (!session) return null;
+  const targetPath = path.resolve(String(vmapPath));
+  if (path.extname(targetPath).toLowerCase() !== '.vmap' || !fs.existsSync(targetPath)) return null;
+
+  // Opening one recent map used to call recentProjectSessions(), synchronously
+  // reading and JSON-parsing every autosave. Because session.json can contain an
+  // entire VMAP snapshot, a single click could block Electron's main process for
+  // seconds. Resolve the deterministic project-key folder and read only the map
+  // the user actually clicked.
+  const directFile = directRecentSessionFile(app, targetPath);
+  let payload = null;
+  try {
+    const text = await fs.promises.readFile(directFile, 'utf8');
+    payload = JSON.parse(text);
+  } catch {}
+
+  if (!payload?.project) {
+    // Compatibility fallback for unusual old sessions whose folder key predates
+    // the current deterministic naming scheme. This should be rare.
+    const target = targetPath.toLowerCase();
+    const session = recentProjectSessions(app).find(item => path.resolve(item.project.vmapPath).toLowerCase() === target);
+    if (!session) return null;
+    payload = { project: session.project, uiState: session.uiState, savedAt: session.savedAt };
+  }
+
+  const project = { ...payload.project, vmapPath: targetPath, openedAt: new Date().toISOString() };
   return {
-    project: { ...session.project, openedAt: new Date().toISOString() },
-    uiState: session.uiState || null,
-    savedAt: session.savedAt || null,
+    project,
+    uiState: stripRedundantRecentVmap(project, payload.uiState || null),
+    savedAt: payload.savedAt || null,
   };
 }
 
