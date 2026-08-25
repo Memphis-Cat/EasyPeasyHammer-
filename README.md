@@ -1,1 +1,1 @@
-currently on a massive development of the next update.
+Currently under heavy development for the next major update.
